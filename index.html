@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jueves FC</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">J</span>
+          <div>
+            <strong>Jueves FC</strong>
+            <span>Partidos semanales</span>
+          </div>
+        </div>
+        <nav class="nav" aria-label="Principal">
+          <button class="nav-item is-active" data-view="players">Jugadores</button>
+          <button class="nav-item" data-view="match">Crear partido</button>
+          <button class="nav-item" data-view="available">Seleccionar disponibles</button>
+          <button class="nav-item" data-view="draw">Sortear equipos</button>
+          <button class="nav-item" data-view="result">Guardar resultado</button>
+          <button class="nav-item" data-view="ranking">Ver ranking</button>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">MVP inicial</p>
+            <h1 id="viewTitle">Jugadores</h1>
+          </div>
+          <div class="quick-stats" aria-label="Resumen">
+            <span><strong id="playerCount">0</strong> jugadores</span>
+            <span><strong id="availableCount">0</strong> disponibles</span>
+            <span><strong id="matchCount">0</strong> partidos</span>
+          </div>
+        </header>
+
+        <section class="view is-active" id="playersView" aria-labelledby="playersHeading">
+          <div class="section-header">
+            <div>
+              <h2 id="playersHeading">Plantilla</h2>
+              <p>Registra nivel, posiciones y estado. El sorteo usa estos datos.</p>
+            </div>
+            <button class="secondary" id="seedPlayersBtn" type="button">Cargar ejemplo</button>
+          </div>
+
+          <form class="form-grid" id="playerForm">
+            <label>
+              Nombre
+              <input id="playerName" name="name" autocomplete="off" required placeholder="Ej. Nico" />
+            </label>
+            <label>
+              Puntaje
+              <select id="playerRating" name="rating">
+                <option value="1">1 - Inicial</option>
+                <option value="2">2 - Cumplidor</option>
+                <option value="3" selected>3 - Solido</option>
+                <option value="4">4 - Fuerte</option>
+                <option value="5">5 - Figura</option>
+              </select>
+            </label>
+            <fieldset>
+              <legend>Posiciones</legend>
+              <label><input type="checkbox" name="positions" value="Arquero" /> Arquero</label>
+              <label><input type="checkbox" name="positions" value="Defensa" /> Defensa</label>
+              <label><input type="checkbox" name="positions" value="Medio" checked /> Medio</label>
+              <label><input type="checkbox" name="positions" value="Delantero" /> Delantero</label>
+            </fieldset>
+            <button class="primary" type="submit">Agregar jugador</button>
+          </form>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Jugador</th>
+                  <th>Puntaje</th>
+                  <th>Posiciones</th>
+                  <th>Disponible</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="playersTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="view" id="matchView" aria-labelledby="matchHeading">
+          <div class="section-header">
+            <div>
+              <h2 id="matchHeading">Crear partido</h2>
+              <p>Define fecha y formato antes de marcar disponibles.</p>
+            </div>
+          </div>
+          <form class="form-grid compact" id="matchForm">
+            <label>
+              Fecha
+              <input id="matchDate" type="date" required />
+            </label>
+            <label>
+              Jugadores por equipo
+              <input id="teamSize" type="number" min="3" max="11" value="5" required />
+            </label>
+            <label>
+              Cancha
+              <input id="matchPlace" placeholder="Ej. Sintetica norte" />
+            </label>
+            <button class="primary" type="submit">Guardar datos</button>
+          </form>
+          <div class="summary-strip" id="matchSummary"></div>
+        </section>
+
+        <section class="view" id="availableView" aria-labelledby="availableHeading">
+          <div class="section-header">
+            <div>
+              <h2 id="availableHeading">Seleccionar disponibles</h2>
+              <p>Activa quienes juegan este jueves.</p>
+            </div>
+            <div class="actions">
+              <button class="secondary" id="markAllBtn" type="button">Todos</button>
+              <button class="secondary" id="clearAvailableBtn" type="button">Limpiar</button>
+            </div>
+          </div>
+          <div class="player-grid" id="availableGrid"></div>
+        </section>
+
+        <section class="view" id="drawView" aria-labelledby="drawHeading">
+          <div class="section-header">
+            <div>
+              <h2 id="drawHeading">Sortear equipos</h2>
+              <p>Busca dos equipos con puntajes cercanos y posiciones repartidas.</p>
+            </div>
+            <button class="primary" id="drawBtn" type="button">Sortear ahora</button>
+          </div>
+          <div class="draw-board">
+            <article class="team-panel">
+              <h3>Equipo A <span id="teamAScore">0 pts</span></h3>
+              <ul id="teamAList"></ul>
+            </article>
+            <article class="team-panel">
+              <h3>Equipo B <span id="teamBScore">0 pts</span></h3>
+              <ul id="teamBList"></ul>
+            </article>
+          </div>
+          <div class="insight-panel" id="drawInsight"></div>
+        </section>
+
+        <section class="view" id="resultView" aria-labelledby="resultHeading">
+          <div class="section-header">
+            <div>
+              <h2 id="resultHeading">Guardar resultado</h2>
+              <p>El ranking suma 3 puntos por ganar y 1 por empatar.</p>
+            </div>
+          </div>
+          <form class="result-form" id="resultForm">
+            <label>
+              Goles Equipo A
+              <input id="goalsA" type="number" min="0" value="0" />
+            </label>
+            <label>
+              Goles Equipo B
+              <input id="goalsB" type="number" min="0" value="0" />
+            </label>
+            <button class="primary" type="submit">Guardar resultado</button>
+          </form>
+          <div class="history" id="matchHistory"></div>
+        </section>
+
+        <section class="view" id="rankingView" aria-labelledby="rankingHeading">
+          <div class="section-header">
+            <div>
+              <h2 id="rankingHeading">Ranking</h2>
+              <p>Tabla acumulada por resultados guardados.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Jugador</th>
+                  <th>Pts</th>
+                  <th>PJ</th>
+                  <th>G</th>
+                  <th>E</th>
+                  <th>P</th>
+                  <th>GF</th>
+                  <th>GC</th>
+                  <th>DG</th>
+                </tr>
+              </thead>
+              <tbody id="rankingTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
