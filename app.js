@@ -146,10 +146,6 @@ function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 }
 
-function stars(rating) {
-  return "★".repeat(rating) + "☆".repeat(5 - rating);
-}
-
 function availablePlayers() {
   return state.players.filter((player) => player.available);
 }
@@ -389,6 +385,37 @@ function playerPills(player) {
   return `<div class="pill-row">${player.positions.map((position) => `<span class="pill">${escapeHtml(position)}</span>`).join("")}</div>`;
 }
 
+function ratingEditor(player) {
+  return `
+    <select class="inline-select" data-action="update-rating" data-id="${player.id}" aria-label="Puntaje de ${escapeHtml(player.name)}">
+      ${[1, 2, 3, 4, 5]
+        .map((rating) => `<option value="${rating}" ${player.rating === rating ? "selected" : ""}>${rating}</option>`)
+        .join("")}
+    </select>
+  `;
+}
+
+function positionEditor(player) {
+  return `
+    <div class="position-editor" aria-label="Posiciones de ${escapeHtml(player.name)}">
+      ${POSITIONS.map(
+        (position) => `
+          <label>
+            <input
+              type="checkbox"
+              data-action="update-position"
+              data-id="${player.id}"
+              data-position="${position}"
+              ${player.positions.includes(position) ? "checked" : ""}
+            />
+            ${position}
+          </label>
+        `
+      ).join("")}
+    </div>
+  `;
+}
+
 function renderPlayersTable() {
   if (!state.players.length) {
     elements.playersTable.innerHTML = `<tr><td colspan="5" class="empty">Todavia no hay jugadores.</td></tr>`;
@@ -398,10 +425,10 @@ function renderPlayersTable() {
   elements.playersTable.innerHTML = state.players
     .map(
       (player) => `
-        <tr>
+        <tr data-player-row="${player.id}">
           <td><strong>${escapeHtml(player.name)}</strong></td>
-          <td class="rating" aria-label="${player.rating} de 5">${stars(player.rating)}</td>
-          <td>${playerPills(player)}</td>
+          <td>${ratingEditor(player)}</td>
+          <td>${positionEditor(player)}</td>
           <td>
             <label class="switch">
               <input type="checkbox" data-action="toggle-player" data-id="${player.id}" ${player.available ? "checked" : ""} />
@@ -607,10 +634,32 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("change", (event) => {
-  if (event.target.dataset.action === "toggle-player") {
+  const action = event.target.dataset.action;
+
+  if (action === "toggle-player") {
     const player = getPlayer(event.target.dataset.id);
     if (!player) return;
     player.available = event.target.checked;
+    state.draw = null;
+    saveState();
+  }
+
+  if (action === "update-rating") {
+    const player = getPlayer(event.target.dataset.id);
+    if (!player) return;
+    player.rating = Number(event.target.value);
+    state.draw = null;
+    saveState();
+  }
+
+  if (action === "update-position") {
+    const player = getPlayer(event.target.dataset.id);
+    const row = event.target.closest("[data-player-row]");
+    if (!player || !row) return;
+    const positions = Array.from(row.querySelectorAll('input[data-action="update-position"]:checked')).map(
+      (input) => input.dataset.position
+    );
+    player.positions = positions.length ? positions : ["Medio"];
     state.draw = null;
     saveState();
   }
