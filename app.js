@@ -1,5 +1,19 @@
 const POSITIONS = ["Arquero", "Defensa", "Medio", "Delantero"];
 const FIELD_POSITIONS = ["Defensa", "Medio", "Delantero"];
+const PITCH_LINES = ["Delantero", "Medio", "Defensa", "Arquero"];
+const TEAM_KEYS = ["A", "B"];
+const FORMATION_PRESETS = {
+  1: ["1-0-0", "0-1-0", "0-0-1"],
+  2: ["1-0-1", "1-1-0", "0-1-1"],
+  3: ["1-1-1", "2-0-1", "1-2-0"],
+  4: ["1-2-1", "2-1-1", "1-1-2", "2-2-0"],
+  5: ["2-2-1", "2-1-2", "1-3-1", "3-1-1"],
+  6: ["2-2-2", "3-2-1", "2-3-1", "1-3-2"],
+  7: ["2-3-2", "3-2-2", "2-4-1", "3-3-1"],
+  8: ["3-3-2", "3-4-1", "2-4-2", "4-3-1"],
+  9: ["3-4-2", "4-3-2", "3-3-3", "4-4-1"],
+  10: ["4-4-2", "4-5-1", "3-5-2", "4-3-3"]
+};
 const STORE_KEY = "jueves-fc-state-v1";
 
 const samplePlayers = [
@@ -161,35 +175,95 @@ function positionCounts(team) {
   }, {});
 }
 
-function formationTargets(team) {
-  const keeperCount = team.length >= 4 ? 1 : 0;
-  const fielders = Math.max(team.length - keeperCount, 0);
-  const profiles = {
-    0: [0, 0, 0],
-    1: [1, 0, 0],
-    2: [1, 0, 1],
-    3: [1, 1, 1],
-    4: [1, 2, 1],
-    5: [2, 2, 1],
-    6: [2, 2, 2],
-    7: [2, 3, 2],
-    8: [3, 3, 2],
-    9: [3, 4, 2],
-    10: [4, 4, 2]
-  };
-  const profile =
-    profiles[fielders] ||
-    (() => {
-      const defense = Math.max(1, Math.round(fielders * 0.36));
-      const midfield = Math.max(1, Math.round(fielders * 0.38));
-      return [defense, midfield, Math.max(1, fielders - defense - midfield)];
-    })();
+function keeperSlotsForSize(size) {
+  return size >= 4 ? 1 : 0;
+}
+
+function fieldersForSize(size) {
+  return Math.max(size - keeperSlotsForSize(size), 0);
+}
+
+function parseFormationLabel(label) {
+  const [defense = 0, midfield = 0, attack = 0] = String(label)
+    .split("-")
+    .map((part) => Number(part));
 
   return {
-    Arquero: keeperCount,
-    Defensa: profile[0],
-    Medio: profile[1],
-    Delantero: profile[2]
+    Defensa: Number.isFinite(defense) ? defense : 0,
+    Medio: Number.isFinite(midfield) ? midfield : 0,
+    Delantero: Number.isFinite(attack) ? attack : 0
+  };
+}
+
+function formationSum(label) {
+  const parsed = parseFormationLabel(label);
+  return parsed.Defensa + parsed.Medio + parsed.Delantero;
+}
+
+function fallbackFormation(fielders) {
+  if (!fielders) return "0-0-0";
+  if (fielders === 1) return "1-0-0";
+
+  const defense = Math.max(1, Math.round(fielders * 0.36));
+  const midfield = Math.max(1, Math.round(fielders * 0.38));
+  const attack = Math.max(1, fielders - defense - midfield);
+  return `${defense}-${midfield}-${attack}`;
+}
+
+function formationOptionsForSize(size) {
+  const fielders = fieldersForSize(size);
+  const options = FORMATION_PRESETS[fielders] || [fallbackFormation(fielders)];
+  const validOptions = options.filter((option) => formationSum(option) === fielders);
+
+  return [...new Set(validOptions.length ? validOptions : [fallbackFormation(fielders)])];
+}
+
+function defaultFormationForTeam(team) {
+  return formationOptionsForSize(team.length)[0];
+}
+
+function getDrawTeamIds(teamKey) {
+  return teamKey === "A" ? state.draw?.teamA || [] : state.draw?.teamB || [];
+}
+
+function pruneTeamAssignments(teamKey, team) {
+  if (!state.draw?.assignments?.[teamKey]) return;
+  const teamIds = new Set(team.map((player) => player.id));
+  const assignments = state.draw.assignments[teamKey];
+
+  for (const playerId of Object.keys(assignments)) {
+    if (!teamIds.has(playerId) || !POSITIONS.includes(assignments[playerId])) {
+      delete assignments[playerId];
+    }
+  }
+}
+
+function ensureDrawTactics(teamA, teamB) {
+  if (!state.draw) return;
+  state.draw.formations = state.draw.formations || {};
+  state.draw.assignments = state.draw.assignments || {};
+
+  for (const teamKey of TEAM_KEYS) {
+    const team = teamKey === "A" ? teamA : teamB;
+    const options = formationOptionsForSize(team.length);
+
+    if (!options.includes(state.draw.formations[teamKey])) {
+      state.draw.formations[teamKey] = defaultFormationForTeam(team);
+    }
+
+    state.draw.assignments[teamKey] = state.draw.assignments[teamKey] || {};
+    pruneTeamAssignments(teamKey, team);
+  }
+}
+
+function formationTargets(team, label) {
+  const selected = parseFormationLabel(label || defaultFormationForTeam(team));
+
+  return {
+    Arquero: keeperSlotsForSize(team.length),
+    Defensa: selected.Defensa,
+    Medio: selected.Medio,
+    Delantero: selected.Delantero
   };
 }
 
@@ -240,17 +314,29 @@ function lineWithMostRoom(buckets, targets, player) {
   })[0];
 }
 
-function buildFormation(team) {
-  const targets = formationTargets(team);
+function buildFormation(team, teamKey) {
+  const selectedLabel = state.draw?.formations?.[teamKey] || defaultFormationForTeam(team);
+  const targets = formationTargets(team, selectedLabel);
   const buckets = POSITIONS.reduce((result, position) => {
     result[position] = [];
     return result;
   }, {});
   const assigned = new Set();
+  const assignments = state.draw?.assignments?.[teamKey] || {};
 
-  if (targets.Arquero) {
-    const keeper = pickPlayerForPosition(team, "Arquero");
-    if (keeper) {
+  for (const player of team) {
+    const assignedPosition = assignments[player.id];
+    if (!assignedPosition || !POSITIONS.includes(assignedPosition)) continue;
+    buckets[assignedPosition].push(player);
+    assigned.add(player.id);
+  }
+
+  if (targets.Arquero && !buckets.Arquero.length) {
+    const keeper = pickPlayerForPosition(
+      team.filter((player) => !assigned.has(player.id)),
+      "Arquero"
+    );
+    if (keeper && !assigned.has(keeper.id)) {
       buckets.Arquero.push(keeper);
       assigned.add(keeper.id);
     }
@@ -268,8 +354,8 @@ function buildFormation(team) {
     buckets[lineWithMostRoom(buckets, targets, player)].push(player);
   }
 
-  const label = POSITIONS.map((position) => buckets[position].length).join("-");
-  return { buckets, label };
+  const actualLabel = FIELD_POSITIONS.map((position) => buckets[position].length).join("-");
+  return { buckets, label: selectedLabel, actualLabel, targets };
 }
 
 function teamPositionPenalty(team, teamSize) {
@@ -353,6 +439,14 @@ function makeDraw() {
     createdAt: new Date().toISOString(),
     teamA: best.teamA.map((player) => player.id),
     teamB: best.teamB.map((player) => player.id),
+    formations: {
+      A: defaultFormationForTeam(best.teamA),
+      B: defaultFormationForTeam(best.teamB)
+    },
+    assignments: {
+      A: {},
+      B: {}
+    },
     score: best.score
   };
 }
@@ -527,34 +621,100 @@ function renderTeam(list, team) {
     : `<li class="empty">Sin sorteo todavia.</li>`;
 }
 
-function renderFormation(container, team) {
+function renderFormationTools(teamKey, team, selectedLabel) {
+  const options = formationOptionsForSize(team.length);
+  const suggestions = options.slice(0, 4);
+
+  return `
+    <div class="formation-tools">
+      <label>
+        Formacion
+        <select class="formation-select" data-action="update-formation" data-team="${teamKey}">
+          ${options
+            .map((option) => `<option value="${option}" ${option === selectedLabel ? "selected" : ""}>${option}</option>`)
+            .join("")}
+        </select>
+      </label>
+      <div class="formation-suggestions" aria-label="Formaciones sugeridas">
+        ${suggestions
+          .map(
+            (option) => `
+              <button
+                class="suggestion-chip ${option === selectedLabel ? "is-active" : ""}"
+                type="button"
+                data-action="apply-formation"
+                data-team="${teamKey}"
+                data-formation="${option}"
+              >
+                ${option}
+              </button>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function jerseyNumber(player, team) {
+  return team.findIndex((candidate) => candidate.id === player.id) + 1;
+}
+
+function renderJersey(player, team, teamKey, position) {
+  return `
+    <button
+      class="player-token jersey ${position === "Arquero" ? "is-keeper" : ""}"
+      type="button"
+      draggable="true"
+      data-action="move-player"
+      data-team="${teamKey}"
+      data-player-id="${player.id}"
+      data-position="${position}"
+      title="${escapeHtml(player.name)}"
+    >
+      <span class="jersey-number">${jerseyNumber(player, team)}</span>
+      <span class="jersey-name">${escapeHtml(player.name)}</span>
+    </button>
+  `;
+}
+
+function renderPitchLine(position, formation, team, teamKey) {
+  const players = formation.buckets[position];
+
+  return `
+    <div class="pitch-line pitch-line-${position}" data-drop-position="${position}" data-team="${teamKey}">
+      <span class="line-label">${position}</span>
+      <div class="line-players">
+        ${
+          players.length
+            ? players.map((player) => renderJersey(player, team, teamKey, position)).join("")
+            : `<span class="player-token is-empty">Libre</span>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+function renderFormation(container, team, teamKey) {
   if (!team.length) {
     container.innerHTML = "";
     return null;
   }
 
-  const formation = buildFormation(team);
+  const formation = buildFormation(team, teamKey);
+  const hasManualMoves = Object.keys(state.draw?.assignments?.[teamKey] || {}).length > 0;
   container.innerHTML = `
     <div class="formation-meta">
       <span>Formacion ${escapeHtml(formation.label)}</span>
+      ${hasManualMoves ? `<span>Ajustada</span>` : ""}
     </div>
+    ${renderFormationTools(teamKey, team, formation.label)}
     <div class="pitch" aria-label="Formacion del equipo">
-      ${POSITIONS.map(
-        (position) => `
-          <div class="pitch-line">
-            <span class="line-label">${position}</span>
-            <div class="line-players">
-              ${
-                formation.buckets[position].length
-                  ? formation.buckets[position]
-                      .map((player) => `<span class="player-token">${escapeHtml(player.name)}</span>`)
-                      .join("")
-                  : `<span class="player-token is-empty">Libre</span>`
-              }
-            </div>
-          </div>
-        `
-      ).join("")}
+      <span class="pitch-mark center-circle"></span>
+      <span class="pitch-mark top-box"></span>
+      <span class="pitch-mark bottom-box"></span>
+      <span class="pitch-mark goal-box"></span>
+      ${PITCH_LINES.map((position) => renderPitchLine(position, formation, team, teamKey)).join("")}
     </div>
   `;
   return formation;
@@ -562,10 +722,11 @@ function renderFormation(container, team) {
 
 function renderDraw() {
   const { teamA, teamB } = drawTeams();
+  if (state.draw) ensureDrawTactics(teamA, teamB);
   renderTeam(elements.teamAList, teamA);
   renderTeam(elements.teamBList, teamB);
-  const formationA = renderFormation(elements.teamAFormation, teamA);
-  const formationB = renderFormation(elements.teamBFormation, teamB);
+  const formationA = renderFormation(elements.teamAFormation, teamA, "A");
+  const formationB = renderFormation(elements.teamBFormation, teamB, "B");
 
   if (!state.draw || !formationA || !formationB) {
     elements.drawInsight.innerHTML = `<span>Selecciona disponibles y sortea para ver el balance.</span>`;
@@ -667,6 +828,16 @@ document.addEventListener("click", (event) => {
     state.draw = null;
     saveState();
   }
+
+  if (action === "apply-formation") {
+    const teamKey = event.target.dataset.team;
+    if (!state.draw || !TEAM_KEYS.includes(teamKey)) return;
+    state.draw.formations = state.draw.formations || {};
+    state.draw.assignments = state.draw.assignments || {};
+    state.draw.formations[teamKey] = event.target.dataset.formation;
+    state.draw.assignments[teamKey] = {};
+    saveState();
+  }
 });
 
 document.addEventListener("change", (event) => {
@@ -699,6 +870,77 @@ document.addEventListener("change", (event) => {
     state.draw = null;
     saveState();
   }
+
+  if (action === "update-formation") {
+    const teamKey = event.target.dataset.team;
+    if (!state.draw || !TEAM_KEYS.includes(teamKey)) return;
+    state.draw.formations = state.draw.formations || {};
+    state.draw.assignments = state.draw.assignments || {};
+    state.draw.formations[teamKey] = event.target.value;
+    state.draw.assignments[teamKey] = {};
+    saveState();
+  }
+});
+
+document.addEventListener("dragstart", (event) => {
+  const token = event.target.closest('[data-action="move-player"]');
+  if (!token || !state.draw) return;
+
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData(
+    "text/plain",
+    JSON.stringify({
+      team: token.dataset.team,
+      playerId: token.dataset.playerId
+    })
+  );
+  token.classList.add("is-dragging");
+});
+
+document.addEventListener("dragend", () => {
+  $$(".is-dragging, .is-over").forEach((element) => element.classList.remove("is-dragging", "is-over"));
+});
+
+document.addEventListener("dragover", (event) => {
+  const dropZone = event.target.closest("[data-drop-position]");
+  if (!dropZone) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+});
+
+document.addEventListener("dragenter", (event) => {
+  const dropZone = event.target.closest("[data-drop-position]");
+  if (dropZone) dropZone.classList.add("is-over");
+});
+
+document.addEventListener("dragleave", (event) => {
+  const dropZone = event.target.closest("[data-drop-position]");
+  if (dropZone && !dropZone.contains(event.relatedTarget)) dropZone.classList.remove("is-over");
+});
+
+document.addEventListener("drop", (event) => {
+  const dropZone = event.target.closest("[data-drop-position]");
+  if (!dropZone || !state.draw) return;
+  event.preventDefault();
+
+  let payload;
+  try {
+    payload = JSON.parse(event.dataTransfer.getData("text/plain"));
+  } catch {
+    return;
+  }
+
+  const teamKey = payload.team;
+  const targetPosition = dropZone.dataset.dropPosition;
+  const playerId = payload.playerId;
+
+  if (!TEAM_KEYS.includes(teamKey) || dropZone.dataset.team !== teamKey || !POSITIONS.includes(targetPosition)) return;
+  if (!getDrawTeamIds(teamKey).includes(playerId)) return;
+
+  state.draw.assignments = state.draw.assignments || {};
+  state.draw.assignments[teamKey] = state.draw.assignments[teamKey] || {};
+  state.draw.assignments[teamKey][playerId] = targetPosition;
+  saveState();
 });
 
 elements.playerForm.addEventListener("submit", (event) => {
