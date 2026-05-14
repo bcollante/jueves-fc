@@ -162,8 +162,7 @@ function positionCounts(team) {
 }
 
 function formationTargets(team) {
-  const hasKeeper = team.some((player) => player.positions.includes("Arquero"));
-  const keeperCount = hasKeeper ? 1 : 0;
+  const keeperCount = team.length >= 4 ? 1 : 0;
   const fielders = Math.max(team.length - keeperCount, 0);
   const profiles = {
     0: [0, 0, 0],
@@ -194,17 +193,51 @@ function formationTargets(team) {
   };
 }
 
-function chooseFormationLine(player, buckets, targets) {
-  const eligible = player.positions.filter((position) => FIELD_POSITIONS.includes(position));
-  const candidates = eligible.length ? eligible : FIELD_POSITIONS;
+function positionFitCost(player, position) {
+  if (player.positions.includes(position)) return 0;
 
-  return candidates
+  const costs = {
+    Arquero: { Defensa: 4, Medio: 5, Delantero: 6 },
+    Defensa: { Arquero: 3, Medio: 2, Delantero: 4 },
+    Medio: { Arquero: 4, Defensa: 2, Delantero: 2 },
+    Delantero: { Arquero: 5, Defensa: 4, Medio: 2 }
+  };
+  const positionCosts = player.positions.map((playerPosition) => costs[position]?.[playerPosition] ?? 3);
+
+  return positionCosts.length ? Math.min(...positionCosts) : 3;
+}
+
+function pickPlayerForPosition(players, position) {
+  return players
     .slice()
-    .sort((a, b) => {
-      const shortageA = targets[a] - buckets[a].length;
-      const shortageB = targets[b] - buckets[b].length;
-      return shortageB - shortageA || buckets[a].length - buckets[b].length;
-    })[0];
+    .sort(
+      (a, b) =>
+        positionFitCost(a, position) - positionFitCost(b, position) ||
+        a.positions.length - b.positions.length ||
+        Number(a.rating) - Number(b.rating) ||
+        a.name.localeCompare(b.name)
+    )[0];
+}
+
+function formationSlots(targets) {
+  const slots = [];
+  const maxLineSize = Math.max(...FIELD_POSITIONS.map((position) => targets[position]));
+
+  for (let index = 0; index < maxLineSize; index += 1) {
+    for (const position of FIELD_POSITIONS) {
+      if (index < targets[position]) slots.push(position);
+    }
+  }
+
+  return slots;
+}
+
+function lineWithMostRoom(buckets, targets, player) {
+  return FIELD_POSITIONS.slice().sort((a, b) => {
+    const roomA = targets[a] - buckets[a].length;
+    const roomB = targets[b] - buckets[b].length;
+    return roomB - roomA || positionFitCost(player, a) - positionFitCost(player, b);
+  })[0];
 }
 
 function buildFormation(team) {
@@ -216,22 +249,24 @@ function buildFormation(team) {
   const assigned = new Set();
 
   if (targets.Arquero) {
-    const keeper = team
-      .filter((player) => player.positions.includes("Arquero"))
-      .sort((a, b) => a.positions.length - b.positions.length || a.name.localeCompare(b.name))[0];
-
+    const keeper = pickPlayerForPosition(team, "Arquero");
     if (keeper) {
       buckets.Arquero.push(keeper);
       assigned.add(keeper.id);
     }
   }
 
-  team
-    .filter((player) => !assigned.has(player.id))
-    .sort((a, b) => a.positions.length - b.positions.length || a.name.localeCompare(b.name))
-    .forEach((player) => {
-      buckets[chooseFormationLine(player, buckets, targets)].push(player);
-    });
+  for (const position of formationSlots(targets)) {
+    const available = team.filter((player) => !assigned.has(player.id));
+    if (!available.length) break;
+    const player = pickPlayerForPosition(available, position);
+    buckets[position].push(player);
+    assigned.add(player.id);
+  }
+
+  for (const player of team.filter((candidate) => !assigned.has(candidate.id))) {
+    buckets[lineWithMostRoom(buckets, targets, player)].push(player);
+  }
 
   const label = POSITIONS.map((position) => buckets[position].length).join("-");
   return { buckets, label };
@@ -495,7 +530,7 @@ function renderTeam(list, team) {
 function renderFormation(container, team) {
   if (!team.length) {
     container.innerHTML = "";
-    return;
+    return null;
   }
 
   const formation = buildFormation(team);
@@ -522,27 +557,28 @@ function renderFormation(container, team) {
       ).join("")}
     </div>
   `;
+  return formation;
 }
 
 function renderDraw() {
   const { teamA, teamB } = drawTeams();
   renderTeam(elements.teamAList, teamA);
   renderTeam(elements.teamBList, teamB);
-  renderFormation(elements.teamAFormation, teamA);
-  renderFormation(elements.teamBFormation, teamB);
+  const formationA = renderFormation(elements.teamAFormation, teamA);
+  const formationB = renderFormation(elements.teamBFormation, teamB);
 
-  if (!state.draw) {
+  if (!state.draw || !formationA || !formationB) {
     elements.drawInsight.innerHTML = `<span>Selecciona disponibles y sortea para ver el balance.</span>`;
     return;
   }
 
-  const aCounts = positionCounts(teamA);
-  const bCounts = positionCounts(teamB);
+  const aCounts = formationA.buckets;
+  const bCounts = formationB.buckets;
   elements.drawInsight.innerHTML = `
-    <span>Arqueros: <strong>${aCounts.Arquero}</strong> vs <strong>${bCounts.Arquero}</strong></span>
-    <span>Defensa: <strong>${aCounts.Defensa}</strong> vs <strong>${bCounts.Defensa}</strong></span>
-    <span>Medio: <strong>${aCounts.Medio}</strong> vs <strong>${bCounts.Medio}</strong></span>
-    <span>Delantero: <strong>${aCounts.Delantero}</strong> vs <strong>${bCounts.Delantero}</strong></span>
+    <span>Arqueros: <strong>${aCounts.Arquero.length}</strong> vs <strong>${bCounts.Arquero.length}</strong></span>
+    <span>Defensa: <strong>${aCounts.Defensa.length}</strong> vs <strong>${bCounts.Defensa.length}</strong></span>
+    <span>Medio: <strong>${aCounts.Medio.length}</strong> vs <strong>${bCounts.Medio.length}</strong></span>
+    <span>Delantero: <strong>${aCounts.Delantero.length}</strong> vs <strong>${bCounts.Delantero.length}</strong></span>
   `;
 }
 
