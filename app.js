@@ -1,4 +1,5 @@
 const POSITIONS = ["Arquero", "Defensa", "Medio", "Delantero"];
+const FIELD_POSITIONS = ["Defensa", "Medio", "Delantero"];
 const STORE_KEY = "jueves-fc-state-v1";
 
 const samplePlayers = [
@@ -28,6 +29,9 @@ const elements = {
   matchCount: $("#matchCount"),
   playersTable: $("#playersTable"),
   playerForm: $("#playerForm"),
+  bulkPlayersForm: $("#bulkPlayersForm"),
+  bulkPlayersText: $("#bulkPlayersText"),
+  bulkImportFeedback: $("#bulkImportFeedback"),
   seedPlayersBtn: $("#seedPlayersBtn"),
   matchForm: $("#matchForm"),
   matchDate: $("#matchDate"),
@@ -40,8 +44,8 @@ const elements = {
   drawBtn: $("#drawBtn"),
   teamAList: $("#teamAList"),
   teamBList: $("#teamBList"),
-  teamAScore: $("#teamAScore"),
-  teamBScore: $("#teamBScore"),
+  teamAFormation: $("#teamAFormation"),
+  teamBFormation: $("#teamBFormation"),
   drawInsight: $("#drawInsight"),
   resultForm: $("#resultForm"),
   goalsA: $("#goalsA"),
@@ -87,6 +91,57 @@ function escapeHtml(value) {
   });
 }
 
+function normalizeToken(value) {
+  return String(value).trim().toLowerCase();
+}
+
+function normalizePosition(value) {
+  const token = normalizeToken(value);
+  if (!token) return null;
+  if (["arquero", "portero", "arco"].includes(token)) return "Arquero";
+  if (["defensa", "def", "central", "lateral"].includes(token)) return "Defensa";
+  if (["medio", "volante", "mediocampo", "media"].includes(token)) return "Medio";
+  if (["delantero", "del", "ataque", "atacante", "punta"].includes(token)) return "Delantero";
+  return POSITIONS.find((position) => normalizeToken(position) === token) || null;
+}
+
+function parsePositions(value) {
+  const positions = String(value || "")
+    .split(/[,+/|]/)
+    .map(normalizePosition)
+    .filter(Boolean);
+
+  return [...new Set(positions)];
+}
+
+function splitBulkLine(line) {
+  if (line.includes(";")) return line.split(";");
+  if (line.includes("\t")) return line.split("\t");
+  if (line.includes(",")) return line.split(",");
+  if (line.includes(" - ")) return line.split(" - ");
+  return [line];
+}
+
+function parseBulkPlayers(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = splitBulkLine(line).map((part) => part.trim()).filter(Boolean);
+      const rawRating = Number(parts[1]);
+      const hasRating = Number.isInteger(rawRating) && rawRating >= 1 && rawRating <= 5;
+      const positionsText = hasRating ? parts.slice(2).join(",") : parts.slice(1).join(",");
+
+      return {
+        name: parts[0],
+        rating: hasRating ? rawRating : 3,
+        positions: parsePositions(positionsText)
+      };
+    })
+    .filter((player) => player.name);
+}
+
 function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 }
@@ -108,6 +163,82 @@ function positionCounts(team) {
     counts[position] = team.filter((player) => player.positions.includes(position)).length;
     return counts;
   }, {});
+}
+
+function formationTargets(team) {
+  const hasKeeper = team.some((player) => player.positions.includes("Arquero"));
+  const keeperCount = hasKeeper ? 1 : 0;
+  const fielders = Math.max(team.length - keeperCount, 0);
+  const profiles = {
+    0: [0, 0, 0],
+    1: [1, 0, 0],
+    2: [1, 0, 1],
+    3: [1, 1, 1],
+    4: [1, 2, 1],
+    5: [2, 2, 1],
+    6: [2, 2, 2],
+    7: [2, 3, 2],
+    8: [3, 3, 2],
+    9: [3, 4, 2],
+    10: [4, 4, 2]
+  };
+  const profile =
+    profiles[fielders] ||
+    (() => {
+      const defense = Math.max(1, Math.round(fielders * 0.36));
+      const midfield = Math.max(1, Math.round(fielders * 0.38));
+      return [defense, midfield, Math.max(1, fielders - defense - midfield)];
+    })();
+
+  return {
+    Arquero: keeperCount,
+    Defensa: profile[0],
+    Medio: profile[1],
+    Delantero: profile[2]
+  };
+}
+
+function chooseFormationLine(player, buckets, targets) {
+  const eligible = player.positions.filter((position) => FIELD_POSITIONS.includes(position));
+  const candidates = eligible.length ? eligible : FIELD_POSITIONS;
+
+  return candidates
+    .slice()
+    .sort((a, b) => {
+      const shortageA = targets[a] - buckets[a].length;
+      const shortageB = targets[b] - buckets[b].length;
+      return shortageB - shortageA || buckets[a].length - buckets[b].length;
+    })[0];
+}
+
+function buildFormation(team) {
+  const targets = formationTargets(team);
+  const buckets = POSITIONS.reduce((result, position) => {
+    result[position] = [];
+    return result;
+  }, {});
+  const assigned = new Set();
+
+  if (targets.Arquero) {
+    const keeper = team
+      .filter((player) => player.positions.includes("Arquero"))
+      .sort((a, b) => a.positions.length - b.positions.length || a.name.localeCompare(b.name))[0];
+
+    if (keeper) {
+      buckets.Arquero.push(keeper);
+      assigned.add(keeper.id);
+    }
+  }
+
+  team
+    .filter((player) => !assigned.has(player.id))
+    .sort((a, b) => a.positions.length - b.positions.length || a.name.localeCompare(b.name))
+    .forEach((player) => {
+      buckets[chooseFormationLine(player, buckets, targets)].push(player);
+    });
+
+  const label = POSITIONS.map((position) => buckets[position].length).join("-");
+  return { buckets, label };
 }
 
 function teamPositionPenalty(team, teamSize) {
@@ -327,7 +458,6 @@ function renderTeam(list, team) {
           (player) => `
             <li>
               <span><strong>${escapeHtml(player.name)}</strong><br />${escapeHtml(player.positions.join(", "))}</span>
-              <span class="rating">${player.rating}</span>
             </li>
           `
         )
@@ -335,24 +465,53 @@ function renderTeam(list, team) {
     : `<li class="empty">Sin sorteo todavia.</li>`;
 }
 
+function renderFormation(container, team) {
+  if (!team.length) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const formation = buildFormation(team);
+  container.innerHTML = `
+    <div class="formation-meta">
+      <span>Formacion ${escapeHtml(formation.label)}</span>
+    </div>
+    <div class="pitch" aria-label="Formacion del equipo">
+      ${POSITIONS.map(
+        (position) => `
+          <div class="pitch-line">
+            <span class="line-label">${position}</span>
+            <div class="line-players">
+              ${
+                formation.buckets[position].length
+                  ? formation.buckets[position]
+                      .map((player) => `<span class="player-token">${escapeHtml(player.name)}</span>`)
+                      .join("")
+                  : `<span class="player-token is-empty">Libre</span>`
+              }
+            </div>
+          </div>
+        `
+      ).join("")}
+    </div>
+  `;
+}
+
 function renderDraw() {
   const { teamA, teamB } = drawTeams();
   renderTeam(elements.teamAList, teamA);
   renderTeam(elements.teamBList, teamB);
-
-  elements.teamAScore.textContent = `${teamTotal(teamA)} pts`;
-  elements.teamBScore.textContent = `${teamTotal(teamB)} pts`;
+  renderFormation(elements.teamAFormation, teamA);
+  renderFormation(elements.teamBFormation, teamB);
 
   if (!state.draw) {
     elements.drawInsight.innerHTML = `<span>Selecciona disponibles y sortea para ver el balance.</span>`;
     return;
   }
 
-  const diff = Math.abs(teamTotal(teamA) - teamTotal(teamB));
   const aCounts = positionCounts(teamA);
   const bCounts = positionCounts(teamB);
   elements.drawInsight.innerHTML = `
-    <span>Diferencia de puntaje: <strong>${diff}</strong></span>
     <span>Arqueros: <strong>${aCounts.Arquero}</strong> vs <strong>${bCounts.Arquero}</strong></span>
     <span>Defensa: <strong>${aCounts.Defensa}</strong> vs <strong>${bCounts.Defensa}</strong></span>
     <span>Medio: <strong>${aCounts.Medio}</strong> vs <strong>${bCounts.Medio}</strong></span>
@@ -472,6 +631,39 @@ elements.playerForm.addEventListener("submit", (event) => {
   state.players.push(player);
   elements.playerForm.reset();
   $("#playerRating").value = "3";
+  saveState();
+});
+
+elements.bulkPlayersForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const existingNames = new Set(state.players.map((player) => normalizeToken(player.name)));
+  const parsedPlayers = parseBulkPlayers(elements.bulkPlayersText.value);
+  const newPlayers = [];
+
+  for (const player of parsedPlayers) {
+    const key = normalizeToken(player.name);
+    if (existingNames.has(key)) continue;
+    existingNames.add(key);
+    newPlayers.push({
+      id: uid(),
+      name: player.name,
+      rating: player.rating,
+      positions: player.positions.length ? player.positions : ["Medio"],
+      available: true
+    });
+  }
+
+  if (!newPlayers.length) {
+    elements.bulkImportFeedback.textContent = parsedPlayers.length
+      ? "La lista no tiene jugadores nuevos."
+      : "Pega al menos un nombre.";
+    return;
+  }
+
+  state.players.push(...newPlayers);
+  state.draw = null;
+  elements.bulkPlayersText.value = "";
+  elements.bulkImportFeedback.textContent = `${newPlayers.length} jugadores importados.`;
   saveState();
 });
 

@@ -26,7 +26,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -241,7 +242,8 @@ fieldset label {
 }
 
 input,
-select {
+select,
+textarea {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -252,9 +254,16 @@ select {
 
 input:focus,
 select:focus,
+textarea:focus,
 button:focus-visible {
   outline: 3px solid rgba(23, 107, 69, 0.2);
   outline-offset: 2px;
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+  line-height: 1.4;
 }
 
 .primary,
@@ -281,6 +290,29 @@ button:focus-visible {
 .danger {
   background: #fae7e7;
   color: var(--danger);
+}
+
+.bulk-form {
+  display: grid;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  box-shadow: var(--shadow);
+  margin-bottom: 20px;
+}
+
+.bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.bulk-actions span {
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .table-wrap {
@@ -400,6 +432,85 @@ tr:last-child td {
   border-radius: 8px;
   padding: 10px;
   background: #fbfcfa;
+}
+
+.formation-card {
+  margin-top: 16px;
+}
+
+.formation-meta {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.formation-meta span {
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--green);
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.pitch {
+  display: grid;
+  gap: 10px;
+  min-height: 360px;
+  border: 1px solid #87b998;
+  border-radius: 8px;
+  padding: 14px;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.2) 1px, transparent 1px),
+    #2b7a47;
+  background-size: 100% 25%, 25% 100%, auto;
+}
+
+.pitch-line {
+  display: grid;
+  align-content: center;
+  gap: 7px;
+}
+
+.line-label {
+  justify-self: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #214332;
+  padding: 4px 9px;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.line-players {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+}
+
+.player-token {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  max-width: 100%;
+  border: 1px solid rgba(23, 54, 38, 0.18);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #173624;
+  padding: 7px 10px;
+  font-size: 0.84rem;
+  font-weight: 900;
+  text-align: center;
+  overflow-wrap: anywhere;
+  box-shadow: 0 6px 16px rgba(11, 42, 25, 0.13);
+}
+
+.player-token.is-empty {
+  opacity: 0.56;
 }
 
 .history {

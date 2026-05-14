@@ -73,6 +73,21 @@
             <button class="primary" type="submit">Agregar jugador</button>
           </form>
 
+          <form class="bulk-form" id="bulkPlayersForm">
+            <label>
+              Pegar lista
+              <textarea
+                id="bulkPlayersText"
+                rows="5"
+                placeholder="Nico, 4, Defensa/Medio&#10;Santi, 3, Delantero&#10;Pipe"
+              ></textarea>
+            </label>
+            <div class="bulk-actions">
+              <button class="primary" type="submit">Importar lista</button>
+              <span id="bulkImportFeedback" aria-live="polite"></span>
+            </div>
+          </form>
+
           <div class="table-wrap">
             <table>
               <thead>
@@ -138,12 +153,14 @@
           </div>
           <div class="draw-board">
             <article class="team-panel">
-              <h3>Equipo A <span id="teamAScore">0 pts</span></h3>
+              <h3>Equipo A</h3>
               <ul id="teamAList"></ul>
+              <div class="formation-card" id="teamAFormation"></div>
             </article>
             <article class="team-panel">
-              <h3>Equipo B <span id="teamBScore">0 pts</span></h3>
+              <h3>Equipo B</h3>
               <ul id="teamBList"></ul>
+              <div class="formation-card" id="teamBFormation"></div>
             </article>
           </div>
           <div class="insight-panel" id="drawInsight"></div>
