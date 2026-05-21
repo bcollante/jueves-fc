@@ -149,7 +149,10 @@
               <h2 id="drawHeading">Sortear equipos</h2>
               <p>Busca dos equipos con puntajes cercanos y posiciones repartidas.</p>
             </div>
-            <button class="primary" id="drawBtn" type="button">Sortear ahora</button>
+            <div class="actions">
+              <button class="secondary" id="finalFormationBtn" type="button">Copiar formacion final</button>
+              <button class="primary" id="drawBtn" type="button">Sortear ahora</button>
+            </div>
           </div>
           <div class="constraints-panel">
             <form class="constraint-form" id="constraintForm">
@@ -185,6 +188,15 @@
             </article>
           </div>
           <div class="insight-panel" id="drawInsight"></div>
+          <div class="final-formation-panel" id="finalFormationPanel" hidden>
+            <div class="section-header compact-header">
+              <div>
+                <h2>Formacion final</h2>
+                <p>Ambos equipos listos para compartir.</p>
+              </div>
+            </div>
+            <textarea id="finalFormationOutput" rows="10" readonly></textarea>
+          </div>
         </section>
 
         <section class="view" id="resultView" aria-labelledby="resultHeading">

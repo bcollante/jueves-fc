@@ -60,6 +60,9 @@ const elements = {
   constraintPlayerB: $("#constraintPlayerB"),
   constraintType: $("#constraintType"),
   constraintList: $("#constraintList"),
+  finalFormationBtn: $("#finalFormationBtn"),
+  finalFormationPanel: $("#finalFormationPanel"),
+  finalFormationOutput: $("#finalFormationOutput"),
   drawBtn: $("#drawBtn"),
   teamAList: $("#teamAList"),
   teamBList: $("#teamBList"),
@@ -520,6 +523,17 @@ function drawTeams() {
   };
 }
 
+function replaceTeamPlayer(teamKey, outgoingId, incomingId) {
+  const key = teamKey === "A" ? "teamA" : "teamB";
+  state.draw[key] = state.draw[key].map((playerId) => (playerId === outgoingId ? incomingId : playerId));
+}
+
+function setPlayerAssignment(teamKey, playerId, position) {
+  state.draw.assignments = state.draw.assignments || {};
+  state.draw.assignments[teamKey] = state.draw.assignments[teamKey] || {};
+  state.draw.assignments[teamKey][playerId] = position;
+}
+
 function rankPlayers() {
   const rows = new Map(
     state.players.map((player) => [
@@ -778,7 +792,7 @@ function renderJersey(player, team, teamKey, position) {
       data-team="${teamKey}"
       data-player-id="${player.id}"
       data-position="${position}"
-      title="${escapeHtml(player.name)}"
+      title="${escapeHtml(player.name)} - arrastra sobre otra camiseta para intercambiar"
     >
       <span class="jersey-number">${jerseyNumber(player, team)}</span>
       <span class="jersey-name">${escapeHtml(player.name)}</span>
@@ -828,6 +842,37 @@ function renderFormation(container, team, teamKey) {
   return formation;
 }
 
+function namesForLine(formation, position) {
+  const names = formation.buckets[position].map((player) => player.name);
+  return names.length ? names.join(", ") : "Libre";
+}
+
+function finalTeamText(teamName, team, teamKey) {
+  const formation = buildFormation(team, teamKey);
+  return [
+    `${teamName} (${formation.actualLabel})`,
+    `Arquero: ${namesForLine(formation, "Arquero")}`,
+    `Defensa: ${namesForLine(formation, "Defensa")}`,
+    `Medio: ${namesForLine(formation, "Medio")}`,
+    `Delantero: ${namesForLine(formation, "Delantero")}`
+  ].join("\n");
+}
+
+function finalFormationText() {
+  const { teamA, teamB } = drawTeams();
+  if (!state.draw || !teamA.length || !teamB.length) return "";
+  ensureDrawTactics(teamA, teamB);
+
+  return [
+    `Jueves FC - ${state.match.date}`,
+    state.match.place ? `Cancha: ${state.match.place}` : "Cancha: Por definir",
+    "",
+    finalTeamText("Equipo A", teamA, "A"),
+    "",
+    finalTeamText("Equipo B", teamB, "B")
+  ].join("\n");
+}
+
 function renderDraw() {
   const { teamA, teamB } = drawTeams();
   if (state.draw) ensureDrawTactics(teamA, teamB);
@@ -837,6 +882,8 @@ function renderDraw() {
   const formationB = renderFormation(elements.teamBFormation, teamB, "B");
 
   if (!state.draw || !formationA || !formationB) {
+    elements.finalFormationPanel.hidden = true;
+    elements.finalFormationOutput.value = "";
     elements.drawInsight.innerHTML = `<span>Selecciona disponibles y sortea para ver el balance.</span>`;
     return;
   }
@@ -849,6 +896,10 @@ function renderDraw() {
     <span>Medio: <strong>${aCounts.Medio.length}</strong> vs <strong>${bCounts.Medio.length}</strong></span>
     <span>Delantero: <strong>${aCounts.Delantero.length}</strong> vs <strong>${bCounts.Delantero.length}</strong></span>
   `;
+
+  if (!elements.finalFormationPanel.hidden) {
+    elements.finalFormationOutput.value = finalFormationText();
+  }
 }
 
 function renderHistory() {
@@ -1009,36 +1060,45 @@ document.addEventListener("dragstart", (event) => {
     "text/plain",
     JSON.stringify({
       team: token.dataset.team,
-      playerId: token.dataset.playerId
+      playerId: token.dataset.playerId,
+      position: token.dataset.position
     })
   );
   token.classList.add("is-dragging");
 });
 
 document.addEventListener("dragend", () => {
-  $$(".is-dragging, .is-over").forEach((element) => element.classList.remove("is-dragging", "is-over"));
+  $$(".is-dragging, .is-over, .is-swap-target").forEach((element) =>
+    element.classList.remove("is-dragging", "is-over", "is-swap-target")
+  );
 });
 
 document.addEventListener("dragover", (event) => {
   const dropZone = event.target.closest("[data-drop-position]");
-  if (!dropZone) return;
+  const targetToken = event.target.closest('[data-action="move-player"]');
+  if (!dropZone && !targetToken) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = "move";
 });
 
 document.addEventListener("dragenter", (event) => {
   const dropZone = event.target.closest("[data-drop-position]");
+  const targetToken = event.target.closest('[data-action="move-player"]');
   if (dropZone) dropZone.classList.add("is-over");
+  if (targetToken) targetToken.classList.add("is-swap-target");
 });
 
 document.addEventListener("dragleave", (event) => {
   const dropZone = event.target.closest("[data-drop-position]");
+  const targetToken = event.target.closest('[data-action="move-player"]');
   if (dropZone && !dropZone.contains(event.relatedTarget)) dropZone.classList.remove("is-over");
+  if (targetToken && !targetToken.contains(event.relatedTarget)) targetToken.classList.remove("is-swap-target");
 });
 
 document.addEventListener("drop", (event) => {
   const dropZone = event.target.closest("[data-drop-position]");
-  if (!dropZone || !state.draw) return;
+  const targetToken = event.target.closest('[data-action="move-player"]');
+  if ((!dropZone && !targetToken) || !state.draw) return;
   event.preventDefault();
 
   let payload;
@@ -1049,15 +1109,35 @@ document.addEventListener("drop", (event) => {
   }
 
   const teamKey = payload.team;
-  const targetPosition = dropZone.dataset.dropPosition;
   const playerId = payload.playerId;
+  const sourcePosition = payload.position;
 
-  if (!TEAM_KEYS.includes(teamKey) || dropZone.dataset.team !== teamKey || !POSITIONS.includes(targetPosition)) return;
+  if (!TEAM_KEYS.includes(teamKey) || !POSITIONS.includes(sourcePosition)) return;
   if (!getDrawTeamIds(teamKey).includes(playerId)) return;
 
-  state.draw.assignments = state.draw.assignments || {};
-  state.draw.assignments[teamKey] = state.draw.assignments[teamKey] || {};
-  state.draw.assignments[teamKey][playerId] = targetPosition;
+  if (targetToken && targetToken.dataset.playerId !== playerId) {
+    const targetTeam = targetToken.dataset.team;
+    const targetPlayerId = targetToken.dataset.playerId;
+    const targetPosition = targetToken.dataset.position;
+
+    if (!TEAM_KEYS.includes(targetTeam) || !POSITIONS.includes(targetPosition)) return;
+    if (!getDrawTeamIds(targetTeam).includes(targetPlayerId)) return;
+
+    if (targetTeam !== teamKey) {
+      replaceTeamPlayer(teamKey, playerId, targetPlayerId);
+      replaceTeamPlayer(targetTeam, targetPlayerId, playerId);
+    }
+
+    setPlayerAssignment(teamKey, targetPlayerId, sourcePosition);
+    setPlayerAssignment(targetTeam, playerId, targetPosition);
+    saveState();
+    return;
+  }
+
+  const targetPosition = dropZone?.dataset.dropPosition;
+  if (!dropZone || dropZone.dataset.team !== teamKey || !POSITIONS.includes(targetPosition)) return;
+
+  setPlayerAssignment(teamKey, playerId, targetPosition);
   saveState();
 });
 
@@ -1181,9 +1261,31 @@ elements.clearAvailableBtn.addEventListener("click", () => {
   saveState();
 });
 
+elements.finalFormationBtn.addEventListener("click", async () => {
+  const output = finalFormationText();
+  if (!output) {
+    elements.drawInsight.innerHTML = `<span>Primero debes sortear equipos.</span>`;
+    return;
+  }
+
+  elements.finalFormationPanel.hidden = false;
+  elements.finalFormationOutput.value = output;
+
+  try {
+    await navigator.clipboard.writeText(output);
+    elements.drawInsight.innerHTML = `<span>Formacion final copiada.</span>`;
+  } catch {
+    elements.finalFormationOutput.focus();
+    elements.finalFormationOutput.select();
+    elements.drawInsight.innerHTML = `<span>Formacion final lista para copiar.</span>`;
+  }
+});
+
 elements.drawBtn.addEventListener("click", () => {
   try {
     state.draw = makeDraw();
+    elements.finalFormationPanel.hidden = true;
+    elements.finalFormationOutput.value = "";
     saveState();
   } catch (error) {
     elements.drawInsight.innerHTML = `<span>${error.message}</span>`;

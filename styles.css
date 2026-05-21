@@ -710,6 +710,11 @@ tr:last-child td {
   opacity: 0.45;
 }
 
+.player-token.is-swap-target {
+  box-shadow: 0 0 0 4px rgba(240, 194, 75, 0.68), 0 10px 22px rgba(11, 42, 25, 0.18);
+  transform: translateY(-2px);
+}
+
 .player-token.is-keeper {
   background: #f0c24b;
 }
@@ -741,6 +746,30 @@ tr:last-child td {
 .history {
   display: grid;
   gap: 10px;
+}
+
+.final-formation-panel {
+  display: grid;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+.final-formation-panel[hidden] {
+  display: none;
+}
+
+.compact-header {
+  margin-bottom: 0;
+}
+
+.final-formation-panel textarea {
+  min-height: 220px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.92rem;
 }
 
 .empty {
