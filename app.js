@@ -60,6 +60,9 @@ const elements = {
   constraintPlayerB: $("#constraintPlayerB"),
   constraintType: $("#constraintType"),
   constraintList: $("#constraintList"),
+  swapTeamsForm: $("#swapTeamsForm"),
+  swapPlayerA: $("#swapPlayerA"),
+  swapPlayerB: $("#swapPlayerB"),
   finalFormationBtn: $("#finalFormationBtn"),
   finalFormationPanel: $("#finalFormationPanel"),
   finalFormationOutput: $("#finalFormationOutput"),
@@ -534,6 +537,42 @@ function setPlayerAssignment(teamKey, playerId, position) {
   state.draw.assignments[teamKey][playerId] = position;
 }
 
+function removePlayerAssignment(teamKey, playerId) {
+  if (state.draw?.assignments?.[teamKey]) delete state.draw.assignments[teamKey][playerId];
+}
+
+function positionForPlayer(formation, playerId) {
+  return POSITIONS.find((position) => formation.buckets[position].some((player) => player.id === playerId)) || "Medio";
+}
+
+function optionListForTeam(team) {
+  if (!team.length) return `<option value="">Sin sorteo</option>`;
+
+  return team.map((player) => `<option value="${player.id}">${escapeHtml(player.name)}</option>`).join("");
+}
+
+function swapPlayersAcrossTeams(playerAId, playerBId) {
+  const { teamA, teamB } = drawTeams();
+  ensureDrawTactics(teamA, teamB);
+
+  if (!teamA.some((player) => player.id === playerAId) || !teamB.some((player) => player.id === playerBId)) {
+    return false;
+  }
+
+  const formationA = buildFormation(teamA, "A");
+  const formationB = buildFormation(teamB, "B");
+  const playerAPosition = positionForPlayer(formationA, playerAId);
+  const playerBPosition = positionForPlayer(formationB, playerBId);
+
+  replaceTeamPlayer("A", playerAId, playerBId);
+  replaceTeamPlayer("B", playerBId, playerAId);
+  removePlayerAssignment("A", playerAId);
+  removePlayerAssignment("B", playerBId);
+  setPlayerAssignment("A", playerBId, playerAPosition);
+  setPlayerAssignment("B", playerAId, playerBPosition);
+  return true;
+}
+
 function rankPlayers() {
   const rows = new Map(
     state.players.map((player) => [
@@ -727,6 +766,17 @@ function renderConstraints() {
       `;
     })
     .join("");
+}
+
+function renderTeamSwap() {
+  const { teamA, teamB } = drawTeams();
+  const disabled = !state.draw || !teamA.length || !teamB.length;
+
+  elements.swapPlayerA.innerHTML = optionListForTeam(teamA);
+  elements.swapPlayerB.innerHTML = optionListForTeam(teamB);
+  elements.swapPlayerA.disabled = disabled;
+  elements.swapPlayerB.disabled = disabled;
+  elements.swapTeamsForm.querySelector('button[type="submit"]').disabled = disabled;
 }
 
 function renderTeam(list, team) {
@@ -961,6 +1011,7 @@ function render() {
   renderMatch();
   renderAvailable();
   renderConstraints();
+  renderTeamSwap();
   renderDraw();
   renderHistory();
   renderRanking();
@@ -1124,10 +1175,13 @@ document.addEventListener("drop", (event) => {
     if (!getDrawTeamIds(targetTeam).includes(targetPlayerId)) return;
 
     if (targetTeam !== teamKey) {
-      replaceTeamPlayer(teamKey, playerId, targetPlayerId);
-      replaceTeamPlayer(targetTeam, targetPlayerId, playerId);
+      swapPlayersAcrossTeams(playerId, targetPlayerId);
+      saveState();
+      return;
     }
 
+    removePlayerAssignment(teamKey, playerId);
+    removePlayerAssignment(targetTeam, targetPlayerId);
     setPlayerAssignment(teamKey, targetPlayerId, sourcePosition);
     setPlayerAssignment(targetTeam, playerId, targetPosition);
     saveState();
@@ -1258,6 +1312,24 @@ elements.clearAvailableBtn.addEventListener("click", () => {
     player.available = false;
   });
   state.draw = null;
+  saveState();
+});
+
+elements.swapTeamsForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!state.draw) {
+    elements.drawInsight.innerHTML = `<span>Primero debes sortear equipos.</span>`;
+    return;
+  }
+
+  const playerAId = elements.swapPlayerA.value;
+  const playerBId = elements.swapPlayerB.value;
+
+  if (!playerAId || !playerBId || !swapPlayersAcrossTeams(playerAId, playerBId)) {
+    elements.drawInsight.innerHTML = `<span>Elige un jugador de cada equipo para intercambiar.</span>`;
+    return;
+  }
+
   saveState();
 });
 

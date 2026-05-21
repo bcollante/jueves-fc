@@ -442,9 +442,27 @@ tr:last-child td {
   margin-bottom: 16px;
 }
 
+.swap-panel {
+  display: grid;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+  margin-bottom: 16px;
+}
+
 .constraint-form {
   display: grid;
   grid-template-columns: minmax(150px, 1fr) 180px minmax(150px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.swap-form {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) auto;
   gap: 12px;
   align-items: end;
 }
@@ -812,6 +830,7 @@ tr:last-child td {
   .form-grid.compact,
   .result-form,
   .constraint-form,
+  .swap-form,
   .draw-board {
     grid-template-columns: 1fr;
   }
