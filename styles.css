@@ -431,6 +431,60 @@ tr:last-child td {
   margin-bottom: 16px;
 }
 
+.constraints-panel {
+  display: grid;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+  margin-bottom: 16px;
+}
+
+.constraint-form {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 180px minmax(150px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.constraint-list {
+  display: grid;
+  gap: 8px;
+}
+
+.constraint-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 10px;
+}
+
+.constraint-item span {
+  color: var(--muted);
+}
+
+.constraint-item em {
+  display: inline-block;
+  margin-left: 8px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green);
+  padding: 3px 7px;
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.constraint-item strong {
+  color: var(--ink);
+}
+
 .team-panel {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -728,6 +782,7 @@ tr:last-child td {
   .form-grid,
   .form-grid.compact,
   .result-form,
+  .constraint-form,
   .draw-board {
     grid-template-columns: 1fr;
   }

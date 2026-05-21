@@ -55,6 +55,11 @@ const elements = {
   availableGrid: $("#availableGrid"),
   markAllBtn: $("#markAllBtn"),
   clearAvailableBtn: $("#clearAvailableBtn"),
+  constraintForm: $("#constraintForm"),
+  constraintPlayerA: $("#constraintPlayerA"),
+  constraintPlayerB: $("#constraintPlayerB"),
+  constraintType: $("#constraintType"),
+  constraintList: $("#constraintList"),
   drawBtn: $("#drawBtn"),
   teamAList: $("#teamAList"),
   teamBList: $("#teamBList"),
@@ -77,6 +82,7 @@ function loadState() {
       place: ""
     },
     draw: null,
+    constraints: [],
     results: []
   };
 
@@ -162,6 +168,39 @@ function uid() {
 
 function availablePlayers() {
   return state.players.filter((player) => player.available);
+}
+
+function activeConstraintIds(players = state.players) {
+  const playerIds = new Set(players.map((player) => player.id));
+  return new Set(
+    (state.constraints || [])
+      .filter((constraint) => playerIds.has(constraint.playerA) && playerIds.has(constraint.playerB))
+      .flatMap((constraint) => [constraint.playerA, constraint.playerB])
+  );
+}
+
+function selectedPlayersForDraw(players, needed) {
+  const constrainedIds = activeConstraintIds(players);
+  const constrainedPlayers = players.filter((player) => constrainedIds.has(player.id));
+
+  if (constrainedPlayers.length > needed) {
+    throw new Error(
+      `Hay ${constrainedPlayers.length} jugadores en condiciones activas, pero el partido solo necesita ${needed}.`
+    );
+  }
+
+  const selectedIds = new Set(constrainedPlayers.map((player) => player.id));
+  const orderedPlayers = players.slice().sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name));
+  const selected = [...constrainedPlayers];
+
+  for (const player of orderedPlayers) {
+    if (selected.length >= needed) break;
+    if (selectedIds.has(player.id)) continue;
+    selectedIds.add(player.id);
+    selected.push(player);
+  }
+
+  return selected.sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name));
 }
 
 function teamTotal(team) {
@@ -386,6 +425,20 @@ function drawScore(teamA, teamB, teamSize) {
   return ratingDiff * 10 + positionDiff * 3 + structurePenalty * 7;
 }
 
+function constraintsSatisfied(teamAIds, selectedIds) {
+  for (const constraint of state.constraints || []) {
+    if (!selectedIds.has(constraint.playerA) || !selectedIds.has(constraint.playerB)) continue;
+
+    const playerAInTeamA = teamAIds.has(constraint.playerA);
+    const playerBInTeamA = teamAIds.has(constraint.playerB);
+
+    if (constraint.type === "same" && playerAInTeamA !== playerBInTeamA) return false;
+    if (constraint.type === "apart" && playerAInTeamA === playerBInTeamA) return false;
+  }
+
+  return true;
+}
+
 function combinations(items, size, limit = 12000) {
   const result = [];
   const combo = [];
@@ -416,15 +469,15 @@ function makeDraw() {
     throw new Error(`Faltan ${needed - players.length} jugadores para armar dos equipos de ${teamSize}.`);
   }
 
-  const selected = players
-    .slice()
-    .sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name))
-    .slice(0, needed);
+  const selected = selectedPlayersForDraw(players, needed);
+  const selectedIds = new Set(selected.map((player) => player.id));
   const allCombos = combinations(selected, teamSize);
   let best = null;
 
   for (const teamA of allCombos) {
     const teamAIds = new Set(teamA.map((player) => player.id));
+    if (!constraintsSatisfied(teamAIds, selectedIds)) continue;
+
     const teamB = selected.filter((player) => !teamAIds.has(player.id));
     const score = drawScore(teamA, teamB, teamSize);
     const balance = Math.abs(teamTotal(teamA) - teamTotal(teamB));
@@ -432,6 +485,10 @@ function makeDraw() {
     if (!best || score < best.score || (score === best.score && balance < best.balance)) {
       best = { teamA, teamB, score, balance };
     }
+  }
+
+  if (!best) {
+    throw new Error("No hay un sorteo posible que cumpla todas las condiciones.");
   }
 
   return {
@@ -604,6 +661,57 @@ function renderAvailable() {
         </label>
       `
     )
+    .join("");
+}
+
+function playerOptions(selectedId = "") {
+  if (!state.players.length) return `<option value="">Sin jugadores</option>`;
+
+  return state.players
+    .map(
+      (player) =>
+        `<option value="${player.id}" ${player.id === selectedId ? "selected" : ""}>${escapeHtml(player.name)}</option>`
+    )
+    .join("");
+}
+
+function constraintLabel(type) {
+  return type === "apart" ? "equipos distintos" : "mismo equipo";
+}
+
+function renderConstraints() {
+  elements.constraintPlayerA.innerHTML = playerOptions(state.players[0]?.id);
+  elements.constraintPlayerB.innerHTML = playerOptions(state.players[1]?.id || state.players[0]?.id);
+
+  const submitButton = elements.constraintForm.querySelector('button[type="submit"]');
+  const disabled = state.players.length < 2;
+  elements.constraintPlayerA.disabled = disabled;
+  elements.constraintPlayerB.disabled = disabled;
+  elements.constraintType.disabled = disabled;
+  submitButton.disabled = disabled;
+
+  if (!(state.constraints || []).length) {
+    elements.constraintList.innerHTML = `<div class="empty">Sin condiciones para este sorteo.</div>`;
+    return;
+  }
+
+  elements.constraintList.innerHTML = state.constraints
+    .map((constraint) => {
+      const playerA = getPlayer(constraint.playerA);
+      const playerB = getPlayer(constraint.playerB);
+      const isActive = Boolean(playerA?.available && playerB?.available);
+      return `
+        <div class="constraint-item">
+          <span>
+            <strong>${escapeHtml(playerA?.name || "Jugador eliminado")}</strong>
+            ${constraintLabel(constraint.type)}
+            <strong>${escapeHtml(playerB?.name || "Jugador eliminado")}</strong>
+            <em>${isActive ? "Activa" : "Inactiva"}</em>
+          </span>
+          <button class="danger" type="button" data-action="delete-constraint" data-id="${constraint.id}">Quitar</button>
+        </div>
+      `;
+    })
     .join("");
 }
 
@@ -801,6 +909,7 @@ function render() {
   renderPlayersTable();
   renderMatch();
   renderAvailable();
+  renderConstraints();
   renderDraw();
   renderHistory();
   renderRanking();
@@ -825,6 +934,15 @@ document.addEventListener("click", (event) => {
   if (action === "delete-player") {
     const id = event.target.dataset.id;
     state.players = state.players.filter((player) => player.id !== id);
+    state.constraints = (state.constraints || []).filter(
+      (constraint) => constraint.playerA !== id && constraint.playerB !== id
+    );
+    state.draw = null;
+    saveState();
+  }
+
+  if (action === "delete-constraint") {
+    state.constraints = (state.constraints || []).filter((constraint) => constraint.id !== event.target.dataset.id);
     state.draw = null;
     saveState();
   }
@@ -991,6 +1109,33 @@ elements.bulkPlayersForm.addEventListener("submit", (event) => {
   state.draw = null;
   elements.bulkPlayersText.value = "";
   elements.bulkImportFeedback.textContent = `${newPlayers.length} jugadores importados.`;
+  saveState();
+});
+
+elements.constraintForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const playerA = elements.constraintPlayerA.value;
+  const playerB = elements.constraintPlayerB.value;
+  const type = elements.constraintType.value;
+
+  if (!playerA || !playerB || playerA === playerB) {
+    elements.drawInsight.innerHTML = `<span>Elige dos jugadores distintos para crear la condicion.</span>`;
+    return;
+  }
+
+  const samePair = (constraint) =>
+    (constraint.playerA === playerA && constraint.playerB === playerB) ||
+    (constraint.playerA === playerB && constraint.playerB === playerA);
+  const existing = (state.constraints || []).find(samePair);
+
+  if (existing) {
+    existing.type = type;
+  } else {
+    state.constraints = state.constraints || [];
+    state.constraints.push({ id: uid(), playerA, playerB, type });
+  }
+
+  state.draw = null;
   saveState();
 });
 

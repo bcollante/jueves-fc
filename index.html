@@ -151,6 +151,27 @@
             </div>
             <button class="primary" id="drawBtn" type="button">Sortear ahora</button>
           </div>
+          <div class="constraints-panel">
+            <form class="constraint-form" id="constraintForm">
+              <label>
+                Jugador
+                <select id="constraintPlayerA" required></select>
+              </label>
+              <label>
+                Condicion
+                <select id="constraintType">
+                  <option value="same">Mismo equipo</option>
+                  <option value="apart">Equipos distintos</option>
+                </select>
+              </label>
+              <label>
+                Con
+                <select id="constraintPlayerB" required></select>
+              </label>
+              <button class="secondary" type="submit">Agregar condicion</button>
+            </form>
+            <div class="constraint-list" id="constraintList"></div>
+          </div>
           <div class="draw-board">
             <article class="team-panel">
               <h3>Equipo A</h3>
