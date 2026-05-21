@@ -835,7 +835,7 @@ function jerseyNumber(player, team) {
 function renderJersey(player, team, teamKey, position) {
   return `
     <button
-      class="player-token jersey ${position === "Arquero" ? "is-keeper" : ""}"
+      class="player-token jersey team-${teamKey.toLowerCase()} ${position === "Arquero" ? "is-keeper" : ""}"
       type="button"
       draggable="true"
       data-action="move-player"
