@@ -105,13 +105,14 @@ function loadState() {
       ...player,
       name: sanitizePlayerName(player.name)
     }));
-    return loadedState;
+    return normalizeRosterState(loadedState);
   } catch {
     return fallback;
   }
 }
 
 function saveState() {
+  normalizeRosterState(state);
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
   render();
 }
@@ -130,13 +131,17 @@ function escapeHtml(value) {
 }
 
 function normalizeToken(value) {
-  return String(value).trim().toLowerCase();
+  return String(value)
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 }
 
 function sanitizePlayerName(value) {
   return String(value || "")
     .trim()
-    .replace(/^(?:\d+[\.)]|[-*\u2022])\s+/, "")
+    .replace(/^(?:\d+[\.)]|[-*\u2022])\s*/, "")
     .replace(/^\d+\s+(?=\D)/, "")
     .trim();
 }
@@ -236,6 +241,129 @@ function uniquePlayersByName(players) {
     seenNames.add(key);
     return true;
   });
+}
+
+function normalizedPlayerPositions(positions) {
+  const normalized = (Array.isArray(positions) ? positions : String(positions || "").split(/[,+/|]/))
+    .map(normalizePosition)
+    .filter(Boolean);
+
+  return normalized.length ? [...new Set(normalized)] : ["Medio"];
+}
+
+function normalizedPlayerRating(value) {
+  const rating = Number(value);
+  if (!Number.isFinite(rating)) return 3;
+  return Math.min(Math.max(Math.round(rating), 1), 5);
+}
+
+function uniqueIds(ids) {
+  const seenIds = new Set();
+  return (ids || []).filter((id) => {
+    if (!id || seenIds.has(id)) return false;
+    seenIds.add(id);
+    return true;
+  });
+}
+
+function normalizeRosterState(appState) {
+  const playersByName = new Map();
+  const idMap = new Map();
+  const normalizedPlayers = [];
+
+  for (const originalPlayer of appState.players || []) {
+    if (!originalPlayer) continue;
+    const player = {
+      ...originalPlayer,
+      id: originalPlayer.id || uid(),
+      name: sanitizePlayerName(originalPlayer.name),
+      rating: normalizedPlayerRating(originalPlayer.rating),
+      positions: normalizedPlayerPositions(originalPlayer.positions),
+      available: Boolean(originalPlayer.available)
+    };
+    const key = normalizeToken(player.name);
+    if (!key) continue;
+
+    const existingPlayer = playersByName.get(key);
+    if (!existingPlayer) {
+      playersByName.set(key, player);
+      idMap.set(player.id, player.id);
+      normalizedPlayers.push(player);
+      continue;
+    }
+
+    idMap.set(player.id, existingPlayer.id);
+    existingPlayer.rating = Math.max(existingPlayer.rating, player.rating);
+    existingPlayer.positions = [...new Set([...existingPlayer.positions, ...player.positions])];
+    existingPlayer.available = existingPlayer.available || player.available;
+  }
+
+  appState.players = normalizedPlayers;
+  const validPlayerIds = new Set(normalizedPlayers.map((player) => player.id));
+  const remapId = (id) => idMap.get(id) || id;
+  const remapIdList = (ids) => uniqueIds((ids || []).map(remapId).filter((id) => validPlayerIds.has(id)));
+
+  const seenConstraints = new Set();
+  appState.constraints = (appState.constraints || [])
+    .map((constraint) => ({
+      ...constraint,
+      playerA: remapId(constraint.playerA),
+      playerB: remapId(constraint.playerB)
+    }))
+    .filter((constraint) => {
+      if (
+        !constraint.playerA ||
+        !constraint.playerB ||
+        constraint.playerA === constraint.playerB ||
+        !validPlayerIds.has(constraint.playerA) ||
+        !validPlayerIds.has(constraint.playerB)
+      ) {
+        return false;
+      }
+
+      const pairKey = [constraint.playerA, constraint.playerB].sort().join(":");
+      if (seenConstraints.has(pairKey)) return false;
+      seenConstraints.add(pairKey);
+      return true;
+    });
+
+  if (appState.draw) {
+    const originalTeamALength = (appState.draw.teamA || []).length;
+    const originalTeamBLength = (appState.draw.teamB || []).length;
+    const teamA = remapIdList(appState.draw.teamA);
+    const teamB = remapIdList(appState.draw.teamB);
+    const teamAIds = new Set(teamA);
+    const hasOverlap = teamB.some((id) => teamAIds.has(id));
+
+    if (hasOverlap || teamA.length !== originalTeamALength || teamB.length !== originalTeamBLength) {
+      appState.draw = null;
+    } else {
+      appState.draw.teamA = teamA;
+      appState.draw.teamB = teamB;
+      appState.draw.assignments = TEAM_KEYS.reduce((assignments, teamKey) => {
+        const sourceAssignments = appState.draw.assignments?.[teamKey] || {};
+        const teamIds = new Set(teamKey === "A" ? teamA : teamB);
+        assignments[teamKey] = {};
+
+        for (const [playerId, position] of Object.entries(sourceAssignments)) {
+          const mappedId = remapId(playerId);
+          if (teamIds.has(mappedId) && POSITIONS.includes(position)) {
+            assignments[teamKey][mappedId] = position;
+          }
+        }
+
+        return assignments;
+      }, {});
+    }
+  }
+
+  appState.results = (appState.results || []).map((result) => ({
+    ...result,
+    teamA: remapIdList(result.teamA),
+    teamB: remapIdList(result.teamB)
+  }));
+
+  return appState;
 }
 
 function uid() {
