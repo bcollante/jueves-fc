@@ -56,6 +56,9 @@ const elements = {
   teamSize: $("#teamSize"),
   matchPlace: $("#matchPlace"),
   matchSummary: $("#matchSummary"),
+  dayListForm: $("#dayListForm"),
+  dayListText: $("#dayListText"),
+  dayListFeedback: $("#dayListFeedback"),
   availableGrid: $("#availableGrid"),
   markAllBtn: $("#markAllBtn"),
   clearAvailableBtn: $("#clearAvailableBtn"),
@@ -185,12 +188,62 @@ function parseBulkPlayers(text) {
     .filter((player) => player.name);
 }
 
+function lineHasPlayerDetails(line) {
+  const parts = splitBulkLine(line).map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2) return false;
+
+  const rawRating = Number(parts[1]);
+  const hasRating = Number.isInteger(rawRating) && rawRating >= 1 && rawRating <= 5;
+  return hasRating || parsePositions(parts.slice(1).join(",")).length > 0;
+}
+
+function parseDayList(text) {
+  const names = [];
+  const seenNames = new Set();
+  let duplicateCount = 0;
+
+  String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const chunks = lineHasPlayerDetails(line) ? [splitBulkLine(line)[0]] : line.split(/[,\t;]|\s+-\s+/);
+
+      chunks
+        .map(sanitizePlayerName)
+        .filter(Boolean)
+        .forEach((name) => {
+          const key = normalizeToken(name);
+          if (seenNames.has(key)) {
+            duplicateCount += 1;
+            return;
+          }
+
+          seenNames.add(key);
+          names.push(name);
+        });
+    });
+
+  return { names, duplicateCount };
+}
+
+function uniquePlayersByName(players) {
+  const seenNames = new Set();
+
+  return players.filter((player) => {
+    const key = normalizeToken(player.name);
+    if (!key || seenNames.has(key)) return false;
+    seenNames.add(key);
+    return true;
+  });
+}
+
 function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 }
 
 function availablePlayers() {
-  return state.players.filter((player) => player.available);
+  return uniquePlayersByName(state.players.filter((player) => player.available));
 }
 
 function activeConstraintIds(players = state.players) {
@@ -740,7 +793,7 @@ function renderAvailable() {
     return;
   }
 
-  elements.availableGrid.innerHTML = state.players
+  elements.availableGrid.innerHTML = uniquePlayersByName(state.players)
     .map(
       (player) => `
         <label class="player-card ${player.available ? "is-selected" : ""}">
@@ -1450,6 +1503,10 @@ elements.playerForm.addEventListener("submit", (event) => {
   const positions = form.getAll("positions");
   const name = sanitizePlayerName(form.get("name"));
   if (!name) return;
+  if (state.players.some((player) => normalizeToken(player.name) === normalizeToken(name))) {
+    elements.bulkImportFeedback.textContent = "Ese jugador ya existe.";
+    return;
+  }
 
   const player = {
     id: uid(),
@@ -1549,6 +1606,48 @@ elements.matchForm.addEventListener("submit", (event) => {
   state.draw = null;
   saveState();
   switchView("available");
+});
+
+elements.dayListForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const { names, duplicateCount } = parseDayList(elements.dayListText.value);
+
+  if (!names.length) {
+    elements.dayListFeedback.textContent = "Pega al menos un nombre.";
+    return;
+  }
+
+  const playersByName = new Map();
+  state.players.forEach((player) => {
+    const key = normalizeToken(player.name);
+    if (!playersByName.has(key)) playersByName.set(key, player);
+    player.available = false;
+  });
+
+  let createdCount = 0;
+  names.forEach((name) => {
+    const key = normalizeToken(name);
+    let player = playersByName.get(key);
+
+    if (!player) {
+      player = {
+        id: uid(),
+        name,
+        rating: 3,
+        positions: ["Medio"],
+        available: false
+      };
+      state.players.push(player);
+      playersByName.set(key, player);
+      createdCount += 1;
+    }
+
+    player.available = true;
+  });
+
+  state.draw = null;
+  saveState();
+  elements.dayListFeedback.textContent = `${names.length} disponibles. ${createdCount} nuevos. ${duplicateCount} repetidos ignorados.`;
 });
 
 elements.markAllBtn.addEventListener("click", () => {

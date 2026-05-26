@@ -127,6 +127,20 @@
             <button class="primary" type="submit">Guardar datos</button>
           </form>
           <div class="summary-strip" id="matchSummary"></div>
+          <form class="bulk-form" id="dayListForm">
+            <label>
+              Pegar lista del dia
+              <textarea
+                id="dayListText"
+                rows="5"
+                placeholder="1. Benja&#10;2. Alex&#10;Juan, Pipe, Nico"
+              ></textarea>
+            </label>
+            <div class="bulk-actions">
+              <button class="primary" type="submit">Usar como disponibles</button>
+              <span id="dayListFeedback" aria-live="polite"></span>
+            </div>
+          </form>
         </section>
 
         <section class="view" id="availableView" aria-labelledby="availableHeading">
