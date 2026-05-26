@@ -97,7 +97,12 @@ function loadState() {
   };
 
   try {
-    return { ...fallback, ...JSON.parse(localStorage.getItem(STORE_KEY) || "{}") };
+    const loadedState = { ...fallback, ...JSON.parse(localStorage.getItem(STORE_KEY) || "{}") };
+    loadedState.players = (loadedState.players || []).map((player) => ({
+      ...player,
+      name: sanitizePlayerName(player.name)
+    }));
+    return loadedState;
   } catch {
     return fallback;
   }
@@ -123,6 +128,14 @@ function escapeHtml(value) {
 
 function normalizeToken(value) {
   return String(value).trim().toLowerCase();
+}
+
+function sanitizePlayerName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^(?:\d+[\.)]|[-*\u2022])\s+/, "")
+    .replace(/^\d+\s+(?=\D)/, "")
+    .trim();
 }
 
 function normalizePosition(value) {
@@ -164,7 +177,7 @@ function parseBulkPlayers(text) {
       const positionsText = hasRating ? parts.slice(2).join(",") : parts.slice(1).join(",");
 
       return {
-        name: parts[0],
+        name: sanitizePlayerName(parts[0]),
         rating: hasRating ? rawRating : 3,
         positions: parsePositions(positionsText)
       };
@@ -1387,9 +1400,12 @@ elements.playerForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const form = new FormData(elements.playerForm);
   const positions = form.getAll("positions");
+  const name = sanitizePlayerName(form.get("name"));
+  if (!name) return;
+
   const player = {
     id: uid(),
-    name: form.get("name").trim(),
+    name,
     rating: Number(form.get("rating")),
     positions: positions.length ? positions : ["Medio"],
     available: true
