@@ -2,6 +2,10 @@ const POSITIONS = ["Arquero", "Defensa", "Medio", "Delantero"];
 const FIELD_POSITIONS = ["Defensa", "Medio", "Delantero"];
 const PITCH_LINES = ["Delantero", "Medio", "Defensa", "Arquero"];
 const TEAM_KEYS = ["A", "B"];
+const TEAM_COLORS = {
+  A: "#c83e3e",
+  B: "#2368b5"
+};
 const FORMATION_PRESETS = {
   1: ["1-0-0", "0-1-0", "0-0-1"],
   2: ["1-0-1", "1-1-0", "0-1-1"],
@@ -923,6 +927,190 @@ function finalFormationText() {
   ].join("\n");
 }
 
+function distributeLineY(count, top, bottom) {
+  if (count <= 1) return [(top + bottom) / 2];
+
+  const step = (bottom - top) / (count - 1);
+  return Array.from({ length: count }, (_, index) => top + step * index);
+}
+
+function shortText(ctx, text, maxWidth) {
+  const value = String(text);
+  if (ctx.measureText(value).width <= maxWidth) return value;
+
+  let result = value;
+  while (result.length > 2 && ctx.measureText(`${result}...`).width > maxWidth) {
+    result = result.slice(0, -1);
+  }
+  return `${result}...`;
+}
+
+function drawLabel(ctx, text, x, y, maxWidth) {
+  ctx.save();
+  ctx.font = "30px Segoe UI, Arial, sans-serif";
+  ctx.fillStyle = "#111111";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(shortText(ctx, text, maxWidth), x, y);
+  ctx.restore();
+}
+
+function drawPlayerMarker(ctx, player, number, x, y, color, isKeeper) {
+  drawLabel(ctx, player.name, x, y - 46, 180);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, 30, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = isKeeper ? 8 : 4;
+  ctx.strokeStyle = isKeeper ? "#f0c24b" : "rgba(0, 0, 0, 0.18)";
+  ctx.stroke();
+
+  ctx.font = "700 30px Segoe UI, Arial, sans-serif";
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(number, x, y + 1);
+  ctx.restore();
+}
+
+function drawField(ctx, width, height) {
+  const field = { x: 90, y: 80, width: width - 180, height: height - 160 };
+  const stripeWidth = field.width / 12;
+
+  ctx.fillStyle = "#6f7f54";
+  ctx.fillRect(0, 0, width, height);
+
+  for (let index = 0; index < 12; index += 1) {
+    ctx.fillStyle = index % 2 === 0 ? "#71a957" : "#5b9f45";
+    ctx.fillRect(field.x + stripeWidth * index, field.y, stripeWidth + 1, field.height);
+  }
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.92)";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(field.x, field.y, field.width, field.height);
+
+  const centerX = field.x + field.width / 2;
+  const centerY = field.y + field.height / 2;
+  ctx.beginPath();
+  ctx.moveTo(centerX, field.y);
+  ctx.lineTo(centerX, field.y + field.height);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 175, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 12, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  ctx.strokeStyle = "#111111";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  const boxHeight = field.height * 0.58;
+  const boxY = field.y + (field.height - boxHeight) / 2;
+  const boxWidth = 295;
+  const goalHeight = field.height * 0.32;
+  const goalY = field.y + (field.height - goalHeight) / 2;
+  const goalWidth = 105;
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.88)";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(field.x, boxY, boxWidth, boxHeight);
+  ctx.strokeRect(field.x, goalY, goalWidth, goalHeight);
+  ctx.strokeRect(field.x + field.width - boxWidth, boxY, boxWidth, boxHeight);
+  ctx.strokeRect(field.x + field.width - goalWidth, goalY, goalWidth, goalHeight);
+
+  ctx.beginPath();
+  ctx.arc(field.x + boxWidth, centerY, 165, -Math.PI / 2, Math.PI / 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(field.x + field.width - boxWidth, centerY, 165, Math.PI / 2, (Math.PI * 3) / 2);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+  ctx.fillRect(field.x - 22, centerY - 82, 22, 164);
+  ctx.fillRect(field.x + field.width, centerY - 82, 22, 164);
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+  ctx.font = "42px Segoe UI, Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Jueves FC", centerX, field.y + field.height - 44);
+
+  return field;
+}
+
+function lineX(field, teamKey, position) {
+  const left = {
+    Arquero: field.x + 78,
+    Defensa: field.x + 275,
+    Medio: field.x + 535,
+    Delantero: field.x + 760
+  };
+  const right = {
+    Arquero: field.x + field.width - 78,
+    Defensa: field.x + field.width - 275,
+    Medio: field.x + field.width - 535,
+    Delantero: field.x + field.width - 760
+  };
+
+  return teamKey === "A" ? left[position] : right[position];
+}
+
+function drawTeamOnExport(ctx, field, team, teamKey) {
+  const formation = buildFormation(team, teamKey);
+  const color = TEAM_COLORS[teamKey];
+  const top = field.y + 145;
+  const bottom = field.y + field.height - 145;
+
+  for (const position of POSITIONS) {
+    const players = formation.buckets[position];
+    const x = lineX(field, teamKey, position);
+    const yValues = distributeLineY(
+      players.length,
+      position === "Arquero" ? field.y + 330 : top,
+      position === "Arquero" ? field.y + field.height - 330 : bottom
+    );
+
+    players.forEach((player, index) => {
+      drawPlayerMarker(ctx, player, jerseyNumber(player, team), x, yValues[index], color, position === "Arquero");
+    });
+  }
+
+  ctx.save();
+  ctx.font = "700 44px Segoe UI, Arial, sans-serif";
+  ctx.fillStyle = color;
+  ctx.textAlign = teamKey === "A" ? "left" : "right";
+  ctx.fillText(teamKey === "A" ? "Equipo A" : "Equipo B", teamKey === "A" ? field.x : field.x + field.width, field.y - 28);
+  ctx.restore();
+}
+
+function downloadFormationImage() {
+  const { teamA, teamB } = drawTeams();
+  if (!state.draw || !teamA.length || !teamB.length) return false;
+  ensureDrawTactics(teamA, teamB);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = 2000;
+  canvas.height = 1200;
+  const ctx = canvas.getContext("2d");
+  const field = drawField(ctx, canvas.width, canvas.height);
+
+  drawTeamOnExport(ctx, field, teamA, "A");
+  drawTeamOnExport(ctx, field, teamB, "B");
+
+  const link = document.createElement("a");
+  const date = state.match.date || new Date().toISOString().slice(0, 10);
+  link.download = `jueves-fc-formacion-${date}.png`;
+  link.href = canvas.toDataURL("image/png");
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  return true;
+}
+
 function renderDraw() {
   const { teamA, teamB } = drawTeams();
   if (state.draw) ensureDrawTactics(teamA, teamB);
@@ -1333,7 +1521,7 @@ elements.swapTeamsForm.addEventListener("submit", (event) => {
   saveState();
 });
 
-elements.finalFormationBtn.addEventListener("click", async () => {
+elements.finalFormationBtn.addEventListener("click", () => {
   const output = finalFormationText();
   if (!output) {
     elements.drawInsight.innerHTML = `<span>Primero debes sortear equipos.</span>`;
@@ -1343,14 +1531,12 @@ elements.finalFormationBtn.addEventListener("click", async () => {
   elements.finalFormationPanel.hidden = false;
   elements.finalFormationOutput.value = output;
 
-  try {
-    await navigator.clipboard.writeText(output);
-    elements.drawInsight.innerHTML = `<span>Formacion final copiada.</span>`;
-  } catch {
-    elements.finalFormationOutput.focus();
-    elements.finalFormationOutput.select();
-    elements.drawInsight.innerHTML = `<span>Formacion final lista para copiar.</span>`;
+  if (downloadFormationImage()) {
+    elements.drawInsight.innerHTML = `<span>Imagen de formacion descargada.</span>`;
+    return;
   }
+
+  elements.drawInsight.innerHTML = `<span>No se pudo generar la imagen de formacion.</span>`;
 });
 
 elements.drawBtn.addEventListener("click", () => {
