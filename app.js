@@ -641,6 +641,18 @@ function playerPills(player) {
   return `<div class="pill-row">${player.positions.map((position) => `<span class="pill">${escapeHtml(position)}</span>`).join("")}</div>`;
 }
 
+function nameEditor(player) {
+  return `
+    <input
+      class="name-input"
+      data-action="update-name"
+      data-id="${player.id}"
+      value="${escapeHtml(player.name)}"
+      aria-label="Nombre de ${escapeHtml(player.name)}"
+    />
+  `;
+}
+
 function ratingEditor(player) {
   return `
     <select class="inline-select" data-action="update-rating" data-id="${player.id}" aria-label="Puntaje de ${escapeHtml(player.name)}">
@@ -682,7 +694,7 @@ function renderPlayersTable() {
     .map(
       (player) => `
         <tr data-player-row="${player.id}">
-          <td><strong>${escapeHtml(player.name)}</strong></td>
+          <td>${nameEditor(player)}</td>
           <td>${ratingEditor(player)}</td>
           <td>${positionEditor(player)}</td>
           <td>
@@ -1277,6 +1289,24 @@ document.addEventListener("change", (event) => {
     if (!player) return;
     player.rating = Number(event.target.value);
     state.draw = null;
+    saveState();
+  }
+
+  if (action === "update-name") {
+    const player = getPlayer(event.target.dataset.id);
+    if (!player) return;
+    const name = sanitizePlayerName(event.target.value);
+    const duplicate = state.players.some(
+      (candidate) => candidate.id !== player.id && normalizeToken(candidate.name) === normalizeToken(name)
+    );
+
+    if (!name || duplicate) {
+      event.target.value = player.name;
+      elements.drawInsight.innerHTML = `<span>Usa un nombre valido y que no este repetido.</span>`;
+      return;
+    }
+
+    player.name = name;
     saveState();
   }
 

@@ -367,6 +367,12 @@ tr:last-child td {
   font-weight: 900;
 }
 
+.name-input {
+  width: min(220px, 100%);
+  padding: 8px 10px;
+  font-weight: 900;
+}
+
 .inline-select {
   width: 72px;
   padding: 8px 10px;
