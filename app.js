@@ -304,6 +304,7 @@ function ensureDrawTactics(teamA, teamB) {
   if (!state.draw) return;
   state.draw.formations = state.draw.formations || {};
   state.draw.assignments = state.draw.assignments || {};
+  state.draw.keeperVacant = state.draw.keeperVacant || {};
 
   for (const teamKey of TEAM_KEYS) {
     const team = teamKey === "A" ? teamA : teamB;
@@ -314,6 +315,7 @@ function ensureDrawTactics(teamA, teamB) {
     }
 
     state.draw.assignments[teamKey] = state.draw.assignments[teamKey] || {};
+    state.draw.keeperVacant[teamKey] = Boolean(state.draw.keeperVacant[teamKey]);
     pruneTeamAssignments(teamKey, team);
   }
 }
@@ -385,6 +387,7 @@ function buildFormation(team, teamKey) {
   }, {});
   const assigned = new Set();
   const assignments = state.draw?.assignments?.[teamKey] || {};
+  const keeperVacant = Boolean(state.draw?.keeperVacant?.[teamKey]);
 
   for (const player of team) {
     const assignedPosition = assignments[player.id];
@@ -393,7 +396,7 @@ function buildFormation(team, teamKey) {
     assigned.add(player.id);
   }
 
-  if (targets.Arquero && !buckets.Arquero.length) {
+  if (targets.Arquero && !buckets.Arquero.length && !keeperVacant) {
     const keeper = pickPlayerForPosition(
       team.filter((player) => !assigned.has(player.id)),
       "Arquero"
@@ -527,6 +530,10 @@ function makeDraw() {
       A: {},
       B: {}
     },
+    keeperVacant: {
+      A: false,
+      B: false
+    },
     score: best.score
   };
 }
@@ -552,10 +559,16 @@ function setPlayerAssignment(teamKey, playerId, position) {
   state.draw.assignments = state.draw.assignments || {};
   state.draw.assignments[teamKey] = state.draw.assignments[teamKey] || {};
   state.draw.assignments[teamKey][playerId] = position;
+  if (position === "Arquero") setKeeperVacant(teamKey, false);
 }
 
 function removePlayerAssignment(teamKey, playerId) {
   if (state.draw?.assignments?.[teamKey]) delete state.draw.assignments[teamKey][playerId];
+}
+
+function setKeeperVacant(teamKey, value) {
+  state.draw.keeperVacant = state.draw.keeperVacant || {};
+  state.draw.keeperVacant[teamKey] = value;
 }
 
 function positionForPlayer(formation, playerId) {
@@ -1269,6 +1282,7 @@ document.addEventListener("click", (event) => {
     state.draw.assignments = state.draw.assignments || {};
     state.draw.formations[teamKey] = event.target.dataset.formation;
     state.draw.assignments[teamKey] = {};
+    setKeeperVacant(teamKey, false);
     saveState();
   }
 });
@@ -1329,6 +1343,7 @@ document.addEventListener("change", (event) => {
     state.draw.assignments = state.draw.assignments || {};
     state.draw.formations[teamKey] = event.target.value;
     state.draw.assignments[teamKey] = {};
+    setKeeperVacant(teamKey, false);
     saveState();
   }
 });
@@ -1422,6 +1437,9 @@ document.addEventListener("drop", (event) => {
   const targetPosition = dropZone?.dataset.dropPosition;
   if (!dropZone || dropZone.dataset.team !== teamKey || !POSITIONS.includes(targetPosition)) return;
 
+  if (sourcePosition === "Arquero" && targetPosition !== "Arquero") {
+    setKeeperVacant(teamKey, true);
+  }
   setPlayerAssignment(teamKey, playerId, targetPosition);
   saveState();
 });
