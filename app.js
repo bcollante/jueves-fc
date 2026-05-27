@@ -60,8 +60,10 @@ const elements = {
   dayListText: $("#dayListText"),
   dayListFeedback: $("#dayListFeedback"),
   availableGrid: $("#availableGrid"),
+  availableFeedback: $("#availableFeedback"),
   markAllBtn: $("#markAllBtn"),
   clearAvailableBtn: $("#clearAvailableBtn"),
+  removeDuplicatePlayersBtn: $("#removeDuplicatePlayersBtn"),
   constraintForm: $("#constraintForm"),
   constraintPlayerA: $("#constraintPlayerA"),
   constraintPlayerB: $("#constraintPlayerB"),
@@ -241,6 +243,24 @@ function uniquePlayersByName(players) {
     seenNames.add(key);
     return true;
   });
+}
+
+function duplicatePlayerCountByName(players) {
+  const seenNames = new Set();
+  let duplicateCount = 0;
+
+  for (const player of players || []) {
+    const key = normalizeToken(sanitizePlayerName(player?.name));
+    if (!key) continue;
+    if (seenNames.has(key)) {
+      duplicateCount += 1;
+      continue;
+    }
+
+    seenNames.add(key);
+  }
+
+  return duplicateCount;
 }
 
 function normalizedPlayerPositions(positions) {
@@ -924,17 +944,20 @@ function renderAvailable() {
   elements.availableGrid.innerHTML = uniquePlayersByName(state.players)
     .map(
       (player) => `
-        <label class="player-card ${player.available ? "is-selected" : ""}">
+        <article class="player-card ${player.available ? "is-selected" : ""}">
           <header>
             <strong>${escapeHtml(player.name)}</strong>
             <span class="rating">${player.rating}/5</span>
           </header>
           ${playerPills(player)}
-          <span class="switch">
-            <input type="checkbox" data-action="toggle-player" data-id="${player.id}" ${player.available ? "checked" : ""} />
-            Disponible
-          </span>
-        </label>
+          <footer class="player-card-footer">
+            <label class="switch">
+              <input type="checkbox" data-action="toggle-player" data-id="${player.id}" ${player.available ? "checked" : ""} />
+              Disponible
+            </label>
+            <button class="danger compact-button" type="button" data-action="delete-player" data-id="${player.id}">Quitar</button>
+          </footer>
+        </article>
       `
     )
     .join("");
@@ -1442,12 +1465,16 @@ document.addEventListener("click", (event) => {
 
   if (action === "delete-player") {
     const id = event.target.dataset.id;
+    const player = getPlayer(id);
     state.players = state.players.filter((player) => player.id !== id);
     state.constraints = (state.constraints || []).filter(
       (constraint) => constraint.playerA !== id && constraint.playerB !== id
     );
     state.draw = null;
     saveState();
+    if (player && elements.availableFeedback) {
+      elements.availableFeedback.textContent = `${player.name} eliminado.`;
+    }
   }
 
   if (action === "delete-constraint") {
@@ -1792,6 +1819,16 @@ elements.clearAvailableBtn.addEventListener("click", () => {
   });
   state.draw = null;
   saveState();
+});
+
+elements.removeDuplicatePlayersBtn.addEventListener("click", () => {
+  const duplicateCount = duplicatePlayerCountByName(state.players);
+  normalizeRosterState(state);
+  if (duplicateCount) state.draw = null;
+  saveState();
+  elements.availableFeedback.textContent = duplicateCount
+    ? `${duplicateCount} duplicados eliminados por nombre.`
+    : "No habia duplicados por nombre.";
 });
 
 elements.swapTeamsForm.addEventListener("submit", (event) => {
