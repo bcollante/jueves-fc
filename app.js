@@ -47,6 +47,7 @@ const elements = {
   matchCount: $("#matchCount"),
   playersTable: $("#playersTable"),
   playerForm: $("#playerForm"),
+  playerFormFeedback: $("#playerFormFeedback"),
   bulkPlayersForm: $("#bulkPlayersForm"),
   bulkPlayersText: $("#bulkPlayersText"),
   bulkImportFeedback: $("#bulkImportFeedback"),
@@ -137,6 +138,7 @@ function normalizeToken(value) {
     .trim()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
     .toLowerCase();
 }
 
@@ -195,6 +197,17 @@ function parseBulkPlayers(text) {
     .filter((player) => player.name);
 }
 
+function playerNameKey(value) {
+  return normalizeToken(sanitizePlayerName(value));
+}
+
+function hasPlayerWithName(name, excludedId = "") {
+  const key = playerNameKey(name);
+  if (!key) return false;
+
+  return state.players.some((player) => player.id !== excludedId && playerNameKey(player.name) === key);
+}
+
 function lineHasPlayerDetails(line) {
   const parts = splitBulkLine(line).map((part) => part.trim()).filter(Boolean);
   if (parts.length < 2) return false;
@@ -220,7 +233,7 @@ function parseDayList(text) {
         .map(sanitizePlayerName)
         .filter(Boolean)
         .forEach((name) => {
-          const key = normalizeToken(name);
+          const key = playerNameKey(name);
           if (seenNames.has(key)) {
             duplicateCount += 1;
             return;
@@ -238,7 +251,7 @@ function uniquePlayersByName(players) {
   const seenNames = new Set();
 
   return players.filter((player) => {
-    const key = normalizeToken(player.name);
+    const key = playerNameKey(player.name);
     if (!key || seenNames.has(key)) return false;
     seenNames.add(key);
     return true;
@@ -250,7 +263,7 @@ function duplicatePlayerCountByName(players) {
   let duplicateCount = 0;
 
   for (const player of players || []) {
-    const key = normalizeToken(sanitizePlayerName(player?.name));
+    const key = playerNameKey(player?.name);
     if (!key) continue;
     if (seenNames.has(key)) {
       duplicateCount += 1;
@@ -301,7 +314,7 @@ function normalizeRosterState(appState) {
       positions: normalizedPlayerPositions(originalPlayer.positions),
       available: Boolean(originalPlayer.available)
     };
-    const key = normalizeToken(player.name);
+    const key = playerNameKey(player.name);
     if (!key) continue;
 
     const existingPlayer = playersByName.get(key);
@@ -1518,13 +1531,12 @@ document.addEventListener("change", (event) => {
     const player = getPlayer(event.target.dataset.id);
     if (!player) return;
     const name = sanitizePlayerName(event.target.value);
-    const duplicate = state.players.some(
-      (candidate) => candidate.id !== player.id && normalizeToken(candidate.name) === normalizeToken(name)
-    );
+    const duplicate = hasPlayerWithName(name, player.id);
 
     if (!name || duplicate) {
       event.target.value = player.name;
       elements.drawInsight.innerHTML = `<span>Usa un nombre valido y que no este repetido.</span>`;
+      elements.playerFormFeedback.textContent = "Ese nombre ya existe en la plantilla.";
       return;
     }
 
@@ -1658,8 +1670,9 @@ elements.playerForm.addEventListener("submit", (event) => {
   const positions = form.getAll("positions");
   const name = sanitizePlayerName(form.get("name"));
   if (!name) return;
-  if (state.players.some((player) => normalizeToken(player.name) === normalizeToken(name))) {
-    elements.bulkImportFeedback.textContent = "Ese jugador ya existe.";
+  if (hasPlayerWithName(name)) {
+    elements.playerFormFeedback.textContent = "Ese jugador ya existe. Usa otro nombre.";
+    $("#playerName").focus();
     return;
   }
 
@@ -1674,18 +1687,23 @@ elements.playerForm.addEventListener("submit", (event) => {
   state.players.push(player);
   elements.playerForm.reset();
   $("#playerRating").value = "3";
+  elements.playerFormFeedback.textContent = `${name} agregado.`;
   saveState();
 });
 
 elements.bulkPlayersForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  const existingNames = new Set(state.players.map((player) => normalizeToken(player.name)));
+  const existingNames = new Set(state.players.map((player) => playerNameKey(player.name)));
   const parsedPlayers = parseBulkPlayers(elements.bulkPlayersText.value);
   const newPlayers = [];
+  let duplicateCount = 0;
 
   for (const player of parsedPlayers) {
-    const key = normalizeToken(player.name);
-    if (existingNames.has(key)) continue;
+    const key = playerNameKey(player.name);
+    if (existingNames.has(key)) {
+      duplicateCount += 1;
+      continue;
+    }
     existingNames.add(key);
     newPlayers.push({
       id: uid(),
@@ -1698,7 +1716,7 @@ elements.bulkPlayersForm.addEventListener("submit", (event) => {
 
   if (!newPlayers.length) {
     elements.bulkImportFeedback.textContent = parsedPlayers.length
-      ? "La lista no tiene jugadores nuevos."
+      ? `${duplicateCount} repetidos ignorados. No hay jugadores nuevos.`
       : "Pega al menos un nombre.";
     return;
   }
@@ -1706,7 +1724,9 @@ elements.bulkPlayersForm.addEventListener("submit", (event) => {
   state.players.push(...newPlayers);
   state.draw = null;
   elements.bulkPlayersText.value = "";
-  elements.bulkImportFeedback.textContent = `${newPlayers.length} jugadores importados.`;
+  elements.bulkImportFeedback.textContent = `${newPlayers.length} jugadores importados.${
+    duplicateCount ? ` ${duplicateCount} repetidos ignorados.` : ""
+  }`;
   saveState();
 });
 
@@ -1739,15 +1759,36 @@ elements.constraintForm.addEventListener("submit", (event) => {
 
 elements.seedPlayersBtn.addEventListener("click", () => {
   if (state.players.length && !confirm("Esto agregara jugadores de ejemplo a la plantilla actual. Continuar?")) return;
-  state.players.push(
-    ...samplePlayers.map(([name, rating, positions]) => ({
+  const existingNames = new Set(state.players.map((player) => playerNameKey(player.name)));
+  const newSamplePlayers = [];
+  let duplicateCount = 0;
+
+  for (const [name, rating, positions] of samplePlayers) {
+    const key = playerNameKey(name);
+    if (existingNames.has(key)) {
+      duplicateCount += 1;
+      continue;
+    }
+
+    existingNames.add(key);
+    newSamplePlayers.push({
       id: uid(),
       name,
       rating,
       positions,
       available: true
-    }))
-  );
+    });
+  }
+
+  if (!newSamplePlayers.length) {
+    elements.playerFormFeedback.textContent = "Todos los jugadores de ejemplo ya existen.";
+    return;
+  }
+
+  state.players.push(...newSamplePlayers);
+  elements.playerFormFeedback.textContent = `${newSamplePlayers.length} ejemplos agregados.${
+    duplicateCount ? ` ${duplicateCount} repetidos ignorados.` : ""
+  }`;
   saveState();
 });
 
@@ -1774,14 +1815,14 @@ elements.dayListForm.addEventListener("submit", (event) => {
 
   const playersByName = new Map();
   state.players.forEach((player) => {
-    const key = normalizeToken(player.name);
+    const key = playerNameKey(player.name);
     if (!playersByName.has(key)) playersByName.set(key, player);
     player.available = false;
   });
 
   let createdCount = 0;
   names.forEach((name) => {
-    const key = normalizeToken(name);
+    const key = playerNameKey(name);
     let player = playersByName.get(key);
 
     if (!player) {
