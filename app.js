@@ -54,6 +54,7 @@ const elements = {
   bulkPlayersText: $("#bulkPlayersText"),
   bulkImportFeedback: $("#bulkImportFeedback"),
   seedPlayersBtn: $("#seedPlayersBtn"),
+  removeRosterDuplicatesBtn: $("#removeRosterDuplicatesBtn"),
   matchForm: $("#matchForm"),
   matchDate: $("#matchDate"),
   teamSize: $("#teamSize"),
@@ -179,6 +180,29 @@ function splitBulkLine(line) {
   return [line];
 }
 
+function splitTrailingPositions(line) {
+  const words = String(line || "").trim().split(/\s+/).filter(Boolean);
+  const positions = [];
+
+  while (words.length > 1) {
+    const position = normalizePosition(words[words.length - 1]);
+    if (!position) break;
+    positions.unshift(position);
+    words.pop();
+  }
+
+  return {
+    name: words.join(" "),
+    positions
+  };
+}
+
+function playerNameOnly(value) {
+  const cleanName = sanitizePlayerName(value);
+  const inlinePlayer = splitTrailingPositions(cleanName);
+  return sanitizePlayerName(inlinePlayer.name || cleanName);
+}
+
 function parseBulkPlayers(text) {
   return text
     .split(/\r?\n/)
@@ -189,18 +213,19 @@ function parseBulkPlayers(text) {
       const rawRating = Number(parts[1]);
       const hasRating = Number.isInteger(rawRating) && rawRating >= 1 && rawRating <= 5;
       const positionsText = hasRating ? parts.slice(2).join(",") : parts.slice(1).join(",");
+      const inlinePlayer = parts.length === 1 ? splitTrailingPositions(parts[0]) : null;
 
       return {
-        name: sanitizePlayerName(parts[0]),
+        name: playerNameOnly(inlinePlayer?.name || parts[0]),
         rating: hasRating ? rawRating : 3,
-        positions: parsePositions(positionsText)
+        positions: inlinePlayer ? inlinePlayer.positions : parsePositions(positionsText)
       };
     })
     .filter((player) => player.name);
 }
 
 function playerNameKey(value) {
-  return normalizeToken(sanitizePlayerName(value));
+  return normalizeToken(playerNameOnly(value));
 }
 
 function hasPlayerWithName(name, excludedId = "") {
@@ -232,7 +257,7 @@ function parseDayList(text) {
       const chunks = lineHasPlayerDetails(line) ? [splitBulkLine(line)[0]] : line.split(/[,\t;]|\s+-\s+/);
 
       chunks
-        .map(sanitizePlayerName)
+        .map(playerNameOnly)
         .filter(Boolean)
         .forEach((name) => {
           const key = playerNameKey(name);
@@ -276,6 +301,19 @@ function duplicatePlayerCountByName(players) {
   }
 
   return duplicateCount;
+}
+
+function removeDuplicatePlayers(feedbackElement) {
+  const duplicateCount = duplicatePlayerCountByName(state.players);
+  normalizeRosterState(state);
+  if (duplicateCount) state.draw = null;
+  saveState();
+
+  const message = duplicateCount
+    ? `${duplicateCount} duplicados eliminados por nombre.`
+    : "No habia duplicados por nombre.";
+
+  if (feedbackElement) feedbackElement.textContent = message;
 }
 
 function normalizedPlayerPositions(positions) {
@@ -1532,7 +1570,7 @@ document.addEventListener("change", (event) => {
   if (action === "update-name") {
     const player = getPlayer(event.target.dataset.id);
     if (!player) return;
-    const name = sanitizePlayerName(event.target.value);
+    const name = playerNameOnly(event.target.value);
     const duplicate = hasPlayerWithName(name, player.id);
 
     if (!name || duplicate) {
@@ -1679,8 +1717,9 @@ elements.playerName.addEventListener("input", () => {
 elements.playerForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const form = new FormData(elements.playerForm);
-  const positions = form.getAll("positions");
-  const name = sanitizePlayerName(form.get("name"));
+  const inlinePlayer = splitTrailingPositions(form.get("name"));
+  const positions = [...new Set([...form.getAll("positions"), ...inlinePlayer.positions])];
+  const name = playerNameOnly(inlinePlayer.name || form.get("name"));
   if (!name) return;
   if (hasPlayerWithName(name)) {
     elements.playerName.setCustomValidity(DUPLICATE_PLAYER_MESSAGE);
@@ -1807,6 +1846,10 @@ elements.seedPlayersBtn.addEventListener("click", () => {
   saveState();
 });
 
+elements.removeRosterDuplicatesBtn.addEventListener("click", () => {
+  removeDuplicatePlayers(elements.playerFormFeedback);
+});
+
 elements.matchForm.addEventListener("submit", (event) => {
   event.preventDefault();
   state.match = {
@@ -1878,13 +1921,7 @@ elements.clearAvailableBtn.addEventListener("click", () => {
 });
 
 elements.removeDuplicatePlayersBtn.addEventListener("click", () => {
-  const duplicateCount = duplicatePlayerCountByName(state.players);
-  normalizeRosterState(state);
-  if (duplicateCount) state.draw = null;
-  saveState();
-  elements.availableFeedback.textContent = duplicateCount
-    ? `${duplicateCount} duplicados eliminados por nombre.`
-    : "No habia duplicados por nombre.";
+  removeDuplicatePlayers(elements.availableFeedback);
 });
 
 elements.swapTeamsForm.addEventListener("submit", (event) => {
