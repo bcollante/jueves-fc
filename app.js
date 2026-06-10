@@ -19,6 +19,7 @@ const FORMATION_PRESETS = {
   10: ["4-4-2", "4-5-1", "3-5-2", "4-3-3"]
 };
 const STORE_KEY = "jueves-fc-state-v1";
+const DUPLICATE_PLAYER_MESSAGE = "Este nombre ya existe, no se agregara al jugador.";
 
 const samplePlayers = [
   ["Andres", 5, ["Medio", "Delantero"]],
@@ -47,6 +48,7 @@ const elements = {
   matchCount: $("#matchCount"),
   playersTable: $("#playersTable"),
   playerForm: $("#playerForm"),
+  playerName: $("#playerName"),
   playerFormFeedback: $("#playerFormFeedback"),
   bulkPlayersForm: $("#bulkPlayersForm"),
   bulkPlayersText: $("#bulkPlayersText"),
@@ -1536,10 +1538,15 @@ document.addEventListener("change", (event) => {
     if (!name || duplicate) {
       event.target.value = player.name;
       elements.drawInsight.innerHTML = `<span>Usa un nombre valido y que no este repetido.</span>`;
-      elements.playerFormFeedback.textContent = "Ese nombre ya existe en la plantilla.";
+      if (duplicate) {
+        event.target.setCustomValidity(DUPLICATE_PLAYER_MESSAGE);
+        event.target.reportValidity();
+        elements.playerFormFeedback.textContent = DUPLICATE_PLAYER_MESSAGE;
+      }
       return;
     }
 
+    event.target.setCustomValidity("");
     player.name = name;
     saveState();
   }
@@ -1664,6 +1671,11 @@ document.addEventListener("drop", (event) => {
   saveState();
 });
 
+elements.playerName.addEventListener("input", () => {
+  elements.playerName.setCustomValidity("");
+  elements.playerFormFeedback.textContent = "";
+});
+
 elements.playerForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const form = new FormData(elements.playerForm);
@@ -1671,11 +1683,14 @@ elements.playerForm.addEventListener("submit", (event) => {
   const name = sanitizePlayerName(form.get("name"));
   if (!name) return;
   if (hasPlayerWithName(name)) {
-    elements.playerFormFeedback.textContent = "Ese jugador ya existe. Usa otro nombre.";
-    $("#playerName").focus();
+    elements.playerName.setCustomValidity(DUPLICATE_PLAYER_MESSAGE);
+    elements.playerName.reportValidity();
+    elements.playerFormFeedback.textContent = DUPLICATE_PLAYER_MESSAGE;
+    elements.playerName.focus();
     return;
   }
 
+  elements.playerName.setCustomValidity("");
   const player = {
     id: uid(),
     name,
