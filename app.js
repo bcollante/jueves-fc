@@ -53,6 +53,7 @@ const elements = {
   bulkPlayersForm: $("#bulkPlayersForm"),
   bulkPlayersText: $("#bulkPlayersText"),
   bulkImportFeedback: $("#bulkImportFeedback"),
+  sortPlayersBtn: $("#sortPlayersBtn"),
   seedPlayersBtn: $("#seedPlayersBtn"),
   removeRosterDuplicatesBtn: $("#removeRosterDuplicatesBtn"),
   matchForm: $("#matchForm"),
@@ -203,6 +204,10 @@ function playerNameOnly(value) {
   return sanitizePlayerName(inlinePlayer.name || cleanName);
 }
 
+function playerNameSortValue(player) {
+  return playerNameKey(player.name);
+}
+
 function parseBulkPlayers(text) {
   return text
     .split(/\r?\n/)
@@ -314,6 +319,13 @@ function removeDuplicatePlayers(feedbackElement) {
     : "No habia duplicados por nombre.";
 
   if (feedbackElement) feedbackElement.textContent = message;
+}
+
+function sortPlayersAlphabetically() {
+  state.players.sort((a, b) => {
+    const byName = playerNameSortValue(a).localeCompare(playerNameSortValue(b), "es", { sensitivity: "base" });
+    return byName || a.name.localeCompare(b.name, "es", { sensitivity: "base" });
+  });
 }
 
 function normalizedPlayerPositions(positions) {
@@ -1782,6 +1794,12 @@ elements.bulkPlayersForm.addEventListener("submit", (event) => {
     duplicateCount ? ` ${duplicateCount} repetidos ignorados.` : ""
   }`;
   saveState();
+});
+
+elements.sortPlayersBtn.addEventListener("click", () => {
+  sortPlayersAlphabetically();
+  saveState();
+  elements.playerFormFeedback.textContent = "Jugadores ordenados alfabeticamente.";
 });
 
 elements.constraintForm.addEventListener("submit", (event) => {
