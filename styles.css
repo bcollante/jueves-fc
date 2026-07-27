@@ -755,13 +755,13 @@ tr:last-child td {
 }
 
 .player-token.jersey.team-a {
-  background: #c83e3e;
+  background: #171717;
   color: #ffffff;
 }
 
 .player-token.jersey.team-b {
-  background: #2368b5;
-  color: #ffffff;
+  background: #d8a31a;
+  color: #1f1600;
 }
 
 .player-token.jersey:active {

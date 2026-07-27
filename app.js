@@ -3,8 +3,8 @@ const FIELD_POSITIONS = ["Defensa", "Medio", "Delantero"];
 const PITCH_LINES = ["Delantero", "Medio", "Defensa", "Arquero"];
 const TEAM_KEYS = ["A", "B"];
 const TEAM_COLORS = {
-  A: "#c83e3e",
-  B: "#2368b5"
+  A: "#171717",
+  B: "#d8a31a"
 };
 const FORMATION_PRESETS = {
   1: ["1-0-0", "0-1-0", "0-0-1"],
